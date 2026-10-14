@@ -169,6 +169,10 @@ a.btn{display:inline-flex;align-items:center;justify-content:center;text-decorat
 details ul{padding-inline-start:18px;margin:8px 0 0}
 summary{cursor:pointer;color:var(--ink);font-weight:600}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.planwrap{display:flex;flex-direction:column;gap:2px}
+.plan-actions{display:flex;gap:2px;justify-content:flex-end;align-items:center;flex-wrap:wrap;font-size:.88rem;color:var(--muted)}
+.plan-actions .btn{padding-block:4px}
+.manage{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;margin-top:18px}
 .backup{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
 .backup[open]{display:flex;flex-direction:column;gap:10px}
 .backup p{color:var(--muted)}
@@ -459,6 +463,22 @@ async function deletePlan(id){
   else saveLocal();
 }
 
+async function updatePlan(id,cfg){
+  const p=S.plans[id]; if(!p) return;
+  const prev=p.cfg; cfg.created=prev.created||new Date().toISOString(); cfg.edited=new Date().toISOString();
+  p.cfg=cfg; delete builtCache[id]; S.draft=null;
+  if(p.local) saveLocal();
+  else { try{ await enqueue(id,()=>planRef(id).set({cfg,checks:p.checks||{}})); }
+    catch(e){ p.cfg=prev; delete builtCache[id]; flash('לא הצלחתי לשמור את השינויים. נסה שוב.'); openPlan(id); return; } }
+  S.msg='התכנית עודכנה'; openPlan(id);
+}
+function startEdit(id){
+  const p=S.plans[id]; if(!p) return; const c=p.cfg;
+  const tr={}; for(const t of c.tracks){ tr[t.kind]={kind:t.kind,from:t.from||0}; if(t.kind==='tanakh') tr[t.kind].mode=t.mode||(t.split?'split':'seq'); if(t.parts) tr[t.kind].parts=t.parts.slice(); }
+  S.draft={tracks:tr,start:c.start,end:c.end,dows:(c.dows||[0,1,2,3,4,5,6]).slice(),name:c.name||'',preset:'',editId:id};
+  S.homeDel=null; S.view='pick'; render(); window.scrollTo(0,0);
+}
+function leaveWizard(){ const id=S.draft&&S.draft.editId; S.draft=null; if(id&&S.plans[id]) openPlan(id); else { S.view='home'; render(); } }
 let flashT=null;
 function flash(m){ S.msg=m; const el=document.getElementById('status'); if(el) el.textContent=m; clearTimeout(flashT); flashT=setTimeout(()=>{S.msg='';const e2=document.getElementById('status'); if(e2) e2.textContent='';},4000); }
 
@@ -487,13 +507,21 @@ function renderHome(){
   app.innerHTML='<header class="topbar"><div><h1>לוח לימוד יומי חכם</h1><p class="sub">בוחרים מה להספיק ועד מתי, ומקבלים לוח יומי מחושב.</p><p class="sub" style="font-size:.85rem"><a href="privacy.html" style="color:inherit">פרטיות</a></p></div></header>'+note+
     (l.length?'<section class="plans" aria-label="התכניות שלי"><h2>התכניות שלי</h2>'+l.map(p=>{
       const kinds=p.legacy?['torah','nach','mishnah']:trackList(p.cfg).map(t=>t.kind);
-      return '<button type="button" class="plan" data-open="'+esc(p.id)+'"><h3>'+esc(p.cfg.name)+'</h3><span class="pct">'+progressOf(p)+'%</span>'+
+      const card='<button type="button" class="plan" data-open="'+esc(p.id)+'"><h3>'+esc(p.cfg.name)+'</h3><span class="pct">'+progressOf(p)+'%</span>'+
       '<span class="tags">'+kinds.map(k=>'<span style="'+tv(k)+'"><i class="dot"></i>'+KIND[k].label+'</span>').join('')+'<span>· '+esc(hdate(parse(p.cfg.start),true))+' – '+esc(hdate(parse(p.cfg.end),true))+'</span></span></button>';
+      if(p.legacy) return card;
+      const acts=S.homeDel===p.id?'<span>למחוק את „'+esc(p.cfg.name)+'” ואת כל הסימונים?</span><button type="button" class="btn danger" data-delyes="'+esc(p.id)+'">כן, למחוק</button><button type="button" class="btn" data-delno="1">ביטול</button>'
+        :'<button type="button" class="btn ghost" data-edit="'+esc(p.id)+'">עריכה</button><button type="button" class="btn ghost" data-del="'+esc(p.id)+'">מחיקה</button>';
+      return '<div class="planwrap">'+card+'<div class="plan-actions">'+acts+'</div></div>';
     }).join('')+'</section><div><button type="button" class="btn primary" id="new">+ תכנית חדשה</button></div>'
     :'<section class="empty"><h2>מה תרצה להספיק?</h2><p class="sub">תנ״ך, משניות, ש״ס בבלי, רמב״ם או שולחן ערוך. בוחרים, קובעים תאריך סיום, והלוח מחשב כמה ללמוד בכל יום.</p><button type="button" class="btn primary" id="new">להתחיל</button></section>')+
     (hasLocal||S.mode==='local'?'<details class="backup" id="backup"><summary>גיבוי והעברה למכשיר אחר</summary><p>הקוד שומר את כל התכניות והסימונים שלך. שמור אותו בהודעה לעצמך, והדבק אותו כאן במכשיר אחר כדי לשחזר.</p><div class="row"><button type="button" class="btn" id="bk-copy">העתק קוד גיבוי</button></div><label class="f">שחזור מקוד<textarea id="bk-in" placeholder="הדבק כאן קוד גיבוי"></textarea></label><div class="row"><button type="button" class="btn" id="bk-restore">שחזר</button></div></details>':'')+
     '<p class="status" id="status">'+esc(S.msg)+'</p>';
   app.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openPlan(b.dataset.open));
+  app.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>startEdit(b.dataset.edit));
+  app.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{S.homeDel=b.dataset.del;renderHome()});
+  app.querySelectorAll('[data-delno]').forEach(b=>b.onclick=()=>{S.homeDel=null;renderHome()});
+  app.querySelectorAll('[data-delyes]').forEach(b=>b.onclick=()=>{const id=b.dataset.delyes; S.homeDel=null; deletePlan(id).then(()=>flash('התכנית נמחקה'))});
   document.getElementById('new').onclick=startWizard;
   const bc=document.getElementById('bk-copy');
   if(bc) bc.onclick=async()=>{
@@ -519,7 +547,7 @@ function startWizard(){
   const s=parse(todayISO);
   S.draft={tracks:{},start:todayISO,end:iso(addDays(s,364)),dows:[0,1,2,3,4,5,6],name:'',preset:'year'};
   const st=nextHebrew(s,'Tishri',22); if(st){S.draft.end=iso(st);S.draft.preset='st';}
-  S.view='pick'; render(); window.scrollTo(0,0);
+  S.homeDel=null; S.view='pick'; render(); window.scrollTo(0,0);
 }
 const PICKS=[
   {kind:'tanakh',title:'תנ״ך',desc:'929 פרקים · תורה, נביאים וכתובים'},
@@ -534,7 +562,7 @@ function fromOptions(kind,sel){
 }
 function renderPick(){
   const D=S.draft;
-  app.innerHTML='<header class="topbar"><div><p class="steps">שלב 1 מתוך 2</p><h1>מה תרצה להספיק?</h1></div><button type="button" class="btn ghost" id="cancel">ביטול</button></header>'+
+  app.innerHTML='<header class="topbar"><div><p class="steps">'+(D.editId?'עריכת התכנית · ':'')+'שלב 1 מתוך 2</p><h1>מה תרצה להספיק?</h1></div><button type="button" class="btn ghost" id="cancel">ביטול</button></header>'+
   '<p class="sub">אפשר לבחור כמה. כל אחד יקבל מסלול יומי משלו, וכולם יסתיימו באותו תאריך.</p>'+
   '<div class="picks">'+PICKS.map(p=>{
     const t=D.tracks[p.kind], on=!!t;
@@ -548,7 +576,7 @@ function renderPick(){
     return '<div class="pick'+(on?' on':'')+'" style="'+tv(p.kind)+'"><button type="button" class="pick-head" data-kind="'+p.kind+'" aria-pressed="'+on+'"><span><h3>'+p.title+'</h3><span class="desc">'+p.desc+'</span></span><span class="tick" aria-hidden="true"></span></button><div class="opts"'+(on?'':' hidden')+'>'+opts+'</div></div>';
   }).join('')+'</div>'+
   '<div class="actions"><span></span><button type="button" class="btn primary" id="next"'+(Object.keys(D.tracks).length?'':' disabled')+'>הבא: עד מתי? ←</button></div>';
-  document.getElementById('cancel').onclick=()=>{S.view='home';render()};
+  document.getElementById('cancel').onclick=leaveWizard;
   app.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>{const k=b.dataset.kind; if(D.tracks[k]) delete D.tracks[k]; else D.tracks[k]={kind:k,from:0}; renderPick();});
   app.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{D.tracks.tanakh.mode=b.dataset.mode; if(b.dataset.mode!=='seq') D.tracks.tanakh.from=0; renderPick();});
   app.querySelectorAll('[data-part]').forEach(b=>b.onclick=()=>{const t=D.tracks.sa,i=+b.dataset.part; let p=t.parts||[0,1,2,3]; p=p.includes(i)?p.filter(x=>x!==i):[...p,i].sort(); if(!p.length) return; t.parts=p; renderPick();});
@@ -572,13 +600,13 @@ function renderDates(){
   const rh=nextHebrew(s,'Tishri',1); if(rh) presets.push(['rh','ערב ראש השנה '+gp(hparts(rh).year%1000),iso(addDays(rh,-1))]);
   presets.push(['year','שנה מהיום',iso(addDays(s,364))]);
   presets.push(['half','חצי שנה',iso(addDays(s,181))]);
-  app.innerHTML='<header class="topbar"><div><p class="steps">שלב 2 מתוך 2</p><h1>עד מתי לסיים?</h1></div><button type="button" class="btn ghost" id="back">→ חזרה</button></header>'+
+  app.innerHTML='<header class="topbar"><div><p class="steps">'+(D.editId?'עריכת התכנית · ':'')+'שלב 2 מתוך 2</p><h1>עד מתי לסיים?</h1></div><button type="button" class="btn ghost" id="back">→ חזרה</button></header>'+
   '<section class="card"><div class="row" role="group" aria-label="תאריכי סיום מוכנים">'+presets.map(p=>'<button type="button" class="chip" data-preset="'+p[0]+'" data-date="'+p[2]+'" aria-pressed="'+(D.preset===p[0])+'">'+p[1]+'</button>').join('')+'</div>'+
   '<div class="fields"><label class="f">מתחילים ב<input type="date" id="f-start" value="'+D.start+'"></label><label class="f">מסיימים ב<input type="date" id="f-end" value="'+D.end+'"></label></div>'+
   '<div class="f"><span>ימי לימוד</span><div class="row" role="group" aria-label="ימי לימוד">'+DOWS.map((n,i)=>'<button type="button" class="chip" data-dow="'+i+'" aria-pressed="'+D.dows.includes(i)+'" aria-label="יום '+DOW[i]+'">'+n+'</button>').join('')+'</div></div>'+
   '<label class="f">שם התכנית<input type="text" id="f-name" placeholder="'+esc(defaultName())+'" value="'+esc(D.name)+'" maxlength="60"></label></section>'+
   '<section class="card" aria-live="polite"><h3>החישוב</h3><div id="calc" class="preview"></div></section>'+
-  '<div class="actions"><span></span><button type="button" class="btn primary" id="create">צור את הלוח</button></div><p class="status" id="status">'+esc(S.msg)+'</p>';
+  '<div class="actions">'+(D.editId?'<button type="button" class="btn ghost" id="cancel-edit">ביטול</button>':'<span></span>')+'<button type="button" class="btn primary" id="create">'+(D.editId?'שמור שינויים':'צור את הלוח')+'</button></div>'+(D.editId?'<p class="sub">הווים שכבר סימנת נשמרים לפי התאריך שבו סומנו.</p>':'')+'<p class="status" id="status">'+esc(S.msg)+'</p>';
   document.getElementById('back').onclick=()=>{S.view='pick';render()};
   app.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{D.end=b.dataset.date;D.preset=b.dataset.preset;renderDates()});
   app.querySelectorAll('[data-dow]').forEach(b=>b.onclick=()=>{const i=+b.dataset.dow; if(D.dows.includes(i)){ if(D.dows.length===1) return; D.dows=D.dows.filter(x=>x!==i);} else D.dows=[...D.dows,i].sort(); renderDates()});
@@ -586,7 +614,8 @@ function renderDates(){
   document.getElementById('f-end').onchange=e=>{if(e.target.value){D.end=e.target.value;D.preset='';renderDates()}};
   document.getElementById('f-name').oninput=e=>{D.name=e.target.value};
   updateCalc();
-  document.getElementById('create').onclick=()=>{const c=draftCfg(); if(!studyDates(c).length) return; createPlan(c)};
+  document.getElementById('create').onclick=()=>{const c=draftCfg(); if(!studyDates(c).length) return; if(D.editId) updatePlan(D.editId,c); else createPlan(c)};
+  const ce=document.getElementById('cancel-edit'); if(ce) ce.onclick=leaveWizard;
 }
 function updateCalc(){
   const el=document.getElementById('calc'), btn=document.getElementById('create'), cfg=draftCfg();
@@ -698,9 +727,9 @@ function renderBoard(full){
         b.tracks.map(t=>{const it=x.items[t.key];return '<div class="line'+(it.rest?' rest':'')+'" style="'+tv(t.kind)+'"><span><span class="k">'+esc(t.label)+'</span>'+esc(it.rest?'השלמה':it.text)+(it.rest?'':lk(it))+'</span>'+(it.rest?'':box(x.d,t))+'</div>'}).join('')+'</div></li>'}).join(''):'<li class="day"><div></div><div class="sub">אין ימי לימוד בשבוע הזה.</div></li>')+'</ul>'+
     '<div style="text-align:center;margin-top:10px"><button class="btn" id="go-today" type="button">חזרה לשבוע הנוכחי</button></div></section>';
   const notes=item.legacy&&b.notes&&b.notes.length?'<details><summary>הערות ללוח</summary><ul>'+b.notes.map(n=>'<li>'+esc(n.replace(/^•\s*/,''))+'</li>').join('')+'</ul></details>':'';
-  const del=item.legacy?'':'<div class="confirm">'+(S.confirmDel?'<span>למחוק את התכנית ואת כל הסימונים שלה?</span><button type="button" class="btn danger" id="del-yes">כן, למחוק</button><button type="button" class="btn" id="del-no">ביטול</button>':'<button type="button" class="btn ghost" id="del">מחיקת התכנית</button>')+'</div>';
+  const del=item.legacy?'':'<div class="confirm manage">'+(S.confirmDel?'<span>למחוק את התכנית ואת כל הסימונים שלה?</span><button type="button" class="btn danger" id="del-yes">כן, למחוק</button><button type="button" class="btn" id="del-no">ביטול</button>':'<button type="button" class="btn" id="edit">עריכת התכנית</button><button type="button" class="btn ghost" id="del">מחיקת התכנית</button>')+'</div>';
   const y=window.scrollY;
-  app.innerHTML='<header class="topbar"><div><h1>'+esc(item.cfg.name)+'</h1><p class="sub">'+esc(hdate(parse(item.cfg.start),true))+' – '+esc(hdate(parse(item.cfg.end),true))+'</p></div><button type="button" class="btn" id="home">התכניות שלי</button></header>'+
+  app.innerHTML='<header class="topbar"><div><h1>'+esc(item.cfg.name)+'</h1><p class="sub">'+esc(hdate(parse(item.cfg.start),true))+' – '+esc(hdate(parse(item.cfg.end),true))+'</p></div><div class="row">'+(item.legacy?'':'<button type="button" class="btn ghost" id="edit-top">עריכה</button>')+'<button type="button" class="btn" id="home">התכניות שלי</button></div></header>'+
     (!canWrite?'<p class="notice">כדי לסמן וי צריך להיות מחובר.</p>':'')+
     todayHtml+remindCard(item,b)+stats+week+notes+del;
   if(!full) window.scrollTo(0,y);
@@ -739,9 +768,11 @@ function renderBoard(full){
     const a=document.createElement('a'); a.href=url; a.download='luach-limud.ics'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000);
     flash('ירד קובץ יומן עם '+r.count+' ימי לימוד');
   };
+  const ed=document.getElementById('edit'); if(ed) ed.onclick=()=>startEdit(id);
+  const et=document.getElementById('edit-top'); if(et) et.onclick=()=>startEdit(id);
   const dl=document.getElementById('del'); if(dl) dl.onclick=()=>{S.confirmDel=true;renderBoard()};
   const dn2=document.getElementById('del-no'); if(dn2) dn2.onclick=()=>{S.confirmDel=false;renderBoard()};
-  const dy=document.getElementById('del-yes'); if(dy) dy.onclick=()=>deletePlan(id);
+  const dy=document.getElementById('del-yes'); if(dy) dy.onclick=()=>deletePlan(id).then(()=>flash('התכנית נמחקה'));
 }
 app.addEventListener('change',e=>{
   const el=e.target; if(!el.classList||!el.classList.contains('chk')||!el.dataset.date||S.view!=='board') return;
