@@ -1,8 +1,0 @@
-[{
-      "relation": ["delegate_permission/common.handle_all_urls"],
-      "target": {
-        "namespace": "android_app",
-        "package_name": "io.github.oykalmar_cmyk.twa",
-        "sha256_cert_fingerprints": ["E2:AE:2D:4F:1B:1E:26:CE:59:B9:80:1E:6D:02:BA:35:FB:8D:85:7B:3F:0D:39:B5:2D:A8:68:B7:DC:F7:B0:7D"]
-      }
-    }]
