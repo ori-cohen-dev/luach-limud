@@ -670,7 +670,7 @@ function updateCalc(){
       h+='<div class="pv" style="'+tv(t.kind)+'"><b>'+t.label+'</b><span class="big">עלייה ביום, לפי הפרשה של השבוע</span><small>מנהג ארץ ישראל · בשבוע שאין בו פרשה חוזרים על הקודמת</small><small>היום הראשון: '+esc(f.text)+'</small></div>'; continue; }
     const o=(trackList(cfg).find(x=>x.key===t.key)||{}).o||{};
     let W=totalWeight(t.kind,o,N), unit=KIND[t.kind].unit, one=KIND[t.kind].one;
-    if(t.kind==='bavli'){W=W/2;}
+    if(t.kind==='bavli'){const du=buildUnits('bavli',o,0); if(N>du.length){unit='עמודים';one='עמוד';} else W=du.filter((u,i)=>!i||(du[i-1].x1>>1)!==(u.x0>>1)).length;}
     if(t.kind==='torah'&&N>187){unit='פסוקים';one='פסוק';}
     const per=W/N, rest=b.days.filter(d=>d.items[t.key].rest).length;
     const first=b.days[0].items[t.key];
