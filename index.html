@@ -582,7 +582,7 @@ function pickDesc(kind,t,def){
     const L=x.kind==='sa'?null:listOf(x.kind==='torah'||x.kind==='nach'?'tanakh':x.kind), first=us.length?us[0].b:0;
     const one=B===1&&L?(x.kind==='mishnah'||x.kind==='bavli'?'מסכת ':'')+L[first][0]:'';
     if(x.kind==='mishnah') return n(W)+' משניות · '+(one||B+' מסכתות');
-    if(x.kind==='bavli') return n(us.length)+' דפים · '+(one||B+' מסכתות');
+    if(x.kind==='bavli') return n(us.filter((u,i)=>!i||(us[i-1].x1>>1)!==(u.x0>>1)).length)+' דפים · '+(one||B+' מסכתות');
     if(x.kind==='rambam') return n(W)+' פרקים · '+(one||B+' הלכות');
     if(x.kind==='sa') return n(W)+' סימנים · '+(B===4?'ארבעת החלקים':B===1?T.SA[first][0]:B+' חלקים');
     const lbl=x.kind==='torah'?'פרקי תורה':x.kind==='nach'&&t.mode!=='nach'?'פרקי נ״ך':'פרקים';
