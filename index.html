@@ -573,6 +573,24 @@ function rangeSel(kind,t,lo,hi){
     '<div class="row"><button type="button" class="chip" data-one="'+kind+'" aria-pressed="'+one+'">רק '+esc(L[from][0])+'</button>'+
     (all?'':'<button type="button" class="chip" data-all="'+kind+'">הכול</button>')+'</div>';
 }
+function pickDesc(kind,t,def){
+  if(!t) return def;
+  const n=x=>Math.round(x).toLocaleString('he-IL');
+  const parts=trackList({tracks:[t]}).map(x=>{
+    if(x.kind==='parasha') return 'פרשת השבוע';
+    const us=buildUnits(x.kind,x.o,0), W=us.reduce((a,u)=>a+u.w,0), B=new Set(us.map(u=>u.b)).size;
+    const L=x.kind==='sa'?null:listOf(x.kind==='torah'||x.kind==='nach'?'tanakh':x.kind), first=us.length?us[0].b:0;
+    const one=B===1&&L?(x.kind==='mishnah'||x.kind==='bavli'?'מסכת ':'')+L[first][0]:'';
+    if(x.kind==='mishnah') return n(W)+' משניות · '+(one||B+' מסכתות');
+    if(x.kind==='bavli') return n(us.length)+' דפים · '+(one||B+' מסכתות');
+    if(x.kind==='rambam') return n(W)+' פרקים · '+(one||B+' הלכות');
+    if(x.kind==='sa') return n(W)+' סימנים · '+(B===4?'ארבעת החלקים':B===1?T.SA[first][0]:B+' חלקים');
+    const lbl=x.kind==='torah'?'פרקי תורה':x.kind==='nach'&&t.mode!=='nach'?'פרקי נ״ך':'פרקים';
+    const last=us.length?us[us.length-1].b:0;
+    return n(W)+' '+lbl+(x.kind==='torah'||t.mode!=='nach'&&x.kind==='nach'?'':' · '+(one||L[first][0]+' – '+L[last][0]));
+  });
+  return parts.join(' · ');
+}
 function fromOptions(kind,sel){
   const list=kind==='tanakh'?T.TANAKH:kind==='mishnah'?T.MISHNAH:kind==='bavli'?T.BAVLI:T.RAMBAM;
   return list.map((x,i)=>'<option value="'+i+'"'+(i===sel?' selected':'')+'>'+esc(x[0])+'</option>').join('');
@@ -590,7 +608,7 @@ function renderPick(){
       (md==='seq'?rangeSel('tanakh',t||{},0,38):md==='nach'?rangeSel('tanakh',t||{},5,38):''); }
     else if(p.kind==='sa') opts='<div class="row" role="group" aria-label="חלקים">'+T.SA.map((s,i)=>'<button type="button" class="chip" data-part="'+i+'" aria-pressed="'+(!t||!t.parts||t.parts.includes(i))+'">'+esc(s[0])+'</button>').join('')+'</div>';
     else opts=rangeSel(p.kind,t||{},0,listOf(p.kind).length-1);
-    return '<div class="pick'+(on?' on':'')+'" style="'+tv(p.kind)+'"><button type="button" class="pick-head" data-kind="'+p.kind+'" aria-pressed="'+on+'"><span><h3>'+p.title+'</h3><span class="desc">'+p.desc+'</span></span><span class="tick" aria-hidden="true"></span></button><div class="opts"'+(on?'':' hidden')+'>'+opts+'</div></div>';
+    return '<div class="pick'+(on?' on':'')+'" style="'+tv(p.kind)+'"><button type="button" class="pick-head" data-kind="'+p.kind+'" aria-pressed="'+on+'"><span><h3>'+p.title+'</h3><span class="desc">'+esc(pickDesc(p.kind,t,p.desc))+'</span></span><span class="tick" aria-hidden="true"></span></button><div class="opts"'+(on?'':' hidden')+'>'+opts+'</div></div>';
   }).join('')+'</div>'+
   '<div class="actions"><span></span><button type="button" class="btn primary" id="next"'+(Object.keys(D.tracks).length?'':' disabled')+'>הבא: עד מתי? ←</button></div>';
   document.getElementById('cancel').onclick=leaveWizard;
