@@ -169,6 +169,7 @@ a.btn{display:inline-flex;align-items:center;justify-content:center;text-decorat
 details ul{padding-inline-start:18px;margin:8px 0 0}
 summary{cursor:pointer;color:var(--ink);font-weight:600}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.range{display:grid;grid-template-columns:1fr 1fr;gap:8px}.range select{width:100%}
 .planwrap{display:flex;flex-direction:column;gap:2px}
 .plan-actions{display:flex;gap:2px;justify-content:flex-end;align-items:center;flex-wrap:wrap;font-size:.88rem;color:var(--muted)}
 .plan-actions .btn{padding-block:4px}
@@ -239,18 +240,18 @@ function buildUnits(kind,o,N){
   if(kind==='torah'&&N&&N>187){
     T.TORAH_V.forEach((ch,i)=>ch.forEach((n,ci)=>{for(let v=1;v<=n;v++) u.push({b:i,c:ci+1,v,w:1})}));
   } else if(kind==='tanakh'||kind==='torah'||kind==='nach'){
-    const a=kind==='torah'?0:kind==='nach'?5:(o.from||0), b=kind==='torah'?5:39;
+    const a=kind==='torah'?0:kind==='nach'?Math.max(5,o.from||0):(o.from||0), b=kind==='torah'?5:(o.to!=null?o.to+1:39);
     for(let i=a;i<b;i++) for(let c=1;c<=T.TANAKH[i][2];c++) u.push({b:i,c,w:1});
   } else if(kind==='mishnah'){
-    for(let i=o.from||0;i<T.MISHNAH.length;i++) T.MISHNAH[i][2].forEach((n,ci)=>{for(let m=1;m<=n;m++) u.push({b:i,c:ci+1,m,w:1})});
+    for(let i=o.from||0;i<(o.to!=null?o.to+1:T.MISHNAH.length);i++) T.MISHNAH[i][2].forEach((n,ci)=>{for(let m=1;m<=n;m++) u.push({b:i,c:ci+1,m,w:1})});
   } else if(kind==='bavli'){
     const am=[];
-    for(let i=o.from||0;i<T.BAVLI.length;i++){const [,,d,s,n]=T.BAVLI[i]; for(let a=0;a<n;a++) am.push({b:i,x:d*2+s+a});}
+    for(let i=o.from||0;i<(o.to!=null?o.to+1:T.BAVLI.length);i++){const [,,d,s,n]=T.BAVLI[i]; for(let a=0;a<n;a++) am.push({b:i,x:d*2+s+a});}
     const dafs=[]; for(const a of am){const l=dafs[dafs.length-1]; if(l&&l.b===a.b&&(l.x0>>1)===(a.x>>1)){l.x1=a.x;l.w++} else dafs.push({b:a.b,x0:a.x,x1:a.x,w:1});}
     if(N && N>dafs.length) return am.map(a=>({b:a.b,x0:a.x,x1:a.x,w:1}));
     return dafs;
   } else if(kind==='rambam'){
-    for(let i=o.from||0;i<T.RAMBAM.length;i++) for(let c=1;c<=T.RAMBAM[i][2];c++) u.push({b:i,c,w:1});
+    for(let i=o.from||0;i<(o.to!=null?o.to+1:T.RAMBAM.length);i++) for(let c=1;c<=T.RAMBAM[i][2];c++) u.push({b:i,c,w:1});
   } else if(kind==='sa'){
     const parts=(o.parts&&o.parts.length)?o.parts:[0,1,2,3];
     for(const p of [0,1,2,3]) if(parts.includes(p)) for(let c=1;c<=T.SA[p][3];c++) u.push({b:p,c,w:1});
@@ -272,6 +273,10 @@ function alloc(ws,N){
     if(e<s) res.push(null); else {res.push([s,e]); s=e+1;}
   }
   return res;
+}
+function allocSparse(ws,N){
+  const n=ws.length; if(n>=N) return alloc(ws,N);
+  const res=new Array(N).fill(null); for(let k=0;k<n;k++) res[Math.floor(k*N/n)]=[k,k]; return res;
 }
 const amud=x=>gem(x>>1)+(x&1?' ע״ב':' ע״א');
 function describe(kind,us){
@@ -328,7 +333,7 @@ function trackList(cfg){
     const mode=t.kind==='tanakh'?(t.mode||(t.split?'split':'seq')):'';
     if(mode==='split'){out.push({kind:'torah',o:{}});out.push({kind:'nach',o:{}});}
     else if(mode==='parasha'){out.push({kind:'parasha',o:{}});out.push({kind:'nach',o:{}});}
-    else if(mode==='nach') out.push({kind:'nach',o:{}});
+    else if(mode==='nach') out.push({kind:'nach',o:{from:t.from,to:t.to}});
     else out.push({kind:t.kind,o:t});
   }
   return out.sort((x,y)=>ORDER.indexOf(x.kind)-ORDER.indexOf(y.kind)).map(t=>({...t,key:KEY[t.kind],label:KIND[t.kind].label}));
@@ -362,7 +367,7 @@ function parashaItem(dt,dows){
 function buildPlan(cfg){
   const dates=studyDates(cfg), N=dates.length, tracks=trackList(cfg);
   const dows=cfg.dows&&cfg.dows.length?cfg.dows:[0,1,2,3,4,5,6];
-  const per=tracks.map(t=>{if(t.kind==='parasha') return {t,par:true}; const us=buildUnits(t.kind,t.o,N);return {t,us,al:alloc(us.map(x=>x.w),N)}});
+  const per=tracks.map(t=>{if(t.kind==='parasha') return {t,par:true}; const us=buildUnits(t.kind,t.o,N);return {t,us,al:(cfg.v>=2?allocSparse:alloc)(us.map(x=>x.w),N)}});
   const sunday0=addDays(parse(cfg.start),-parse(cfg.start).getDay());
   const days=dates.map((dt,i)=>{
     const items={};
@@ -474,7 +479,7 @@ async function updatePlan(id,cfg){
 }
 function startEdit(id){
   const p=S.plans[id]; if(!p) return; const c=p.cfg;
-  const tr={}; for(const t of c.tracks){ tr[t.kind]={kind:t.kind,from:t.from||0}; if(t.kind==='tanakh') tr[t.kind].mode=t.mode||(t.split?'split':'seq'); if(t.parts) tr[t.kind].parts=t.parts.slice(); }
+  const tr={}; for(const t of c.tracks){ tr[t.kind]={kind:t.kind,from:t.from||0}; if(t.to!=null) tr[t.kind].to=t.to; if(t.kind==='tanakh') tr[t.kind].mode=t.mode||(t.split?'split':'seq'); if(t.parts) tr[t.kind].parts=t.parts.slice(); }
   S.draft={tracks:tr,start:c.start,end:c.end,dows:(c.dows||[0,1,2,3,4,5,6]).slice(),name:c.name||'',preset:'',editId:id};
   S.homeDel=null; S.view='pick'; render(); window.scrollTo(0,0);
 }
@@ -558,6 +563,16 @@ const PICKS=[
   {kind:'rambam',title:'רמב״ם',desc:'1,017 פרקים · משנה תורה, כולל ההקדמה'},
   {kind:'sa',title:'שולחן ערוך',desc:'1,705 סימנים · ארבעת החלקים'}
 ];
+function listOf(kind){ return kind==='tanakh'?T.TANAKH:kind==='mishnah'?T.MISHNAH:kind==='bavli'?T.BAVLI:T.RAMBAM; }
+function rangeSel(kind,t,lo,hi){
+  const L=listOf(kind), from=Math.max(lo,t.from||0), to=t.to!=null?Math.min(hi,Math.max(t.to,from)):hi;
+  const opts=(a,b,sel)=>{let h='';for(let i=a;i<=b;i++) h+='<option value="'+i+'"'+(i===sel?' selected':'')+'>'+esc(L[i][0])+'</option>';return h;};
+  const one=from===to, all=from===lo&&to===hi;
+  return '<div class="range"><label class="f">מ<select data-from="'+kind+'">'+opts(lo,hi,from)+'</select></label>'+
+    '<label class="f">עד (כולל)<select data-to="'+kind+'">'+opts(from,hi,to)+'</select></label></div>'+
+    '<div class="row"><button type="button" class="chip" data-one="'+kind+'" aria-pressed="'+one+'">רק '+esc(L[from][0])+'</button>'+
+    (all?'':'<button type="button" class="chip" data-all="'+kind+'">הכול</button>')+'</div>';
+}
 function fromOptions(kind,sel){
   const list=kind==='tanakh'?T.TANAKH:kind==='mishnah'?T.MISHNAH:kind==='bavli'?T.BAVLI:T.RAMBAM;
   return list.map((x,i)=>'<option value="'+i+'"'+(i===sel?' selected':'')+'>'+esc(x[0])+'</option>').join('');
@@ -572,25 +587,29 @@ function renderPick(){
     if(p.kind==='tanakh'){ const md=(t&&t.mode)||'seq';
       opts='<div class="row" role="group" aria-label="סדר הלימוד">'+[['seq','ברצף אחד'],['split','תורה ונ״ך במקביל'],['parasha','פרשת השבוע + נ״ך'],['nach','רק נ״ך']].map(m=>'<button type="button" class="chip" data-mode="'+m[0]+'" aria-pressed="'+(md===m[0])+'">'+m[1]+'</button>').join('')+'</div>'+
       (md==='parasha'?'<p class="desc">התורה הולכת לפי הפרשה של אותו שבוע (מנהג ארץ ישראל): ראשון ביום ראשון, שני ביום שני וכן הלאה. הנ״ך מתחלק עד תאריך הסיום.</p>':'')+
-      (md==='seq'?'<label class="f">להתחיל מ<select data-from="tanakh">'+fromOptions('tanakh',t?t.from||0:0)+'</select></label>':''); }
+      (md==='seq'?rangeSel('tanakh',t||{},0,38):md==='nach'?rangeSel('tanakh',t||{},5,38):''); }
     else if(p.kind==='sa') opts='<div class="row" role="group" aria-label="חלקים">'+T.SA.map((s,i)=>'<button type="button" class="chip" data-part="'+i+'" aria-pressed="'+(!t||!t.parts||t.parts.includes(i))+'">'+esc(s[0])+'</button>').join('')+'</div>';
-    else opts='<label class="f">להתחיל מ<select data-from="'+p.kind+'">'+fromOptions(p.kind,t?t.from||0:0)+'</select></label>';
+    else opts=rangeSel(p.kind,t||{},0,listOf(p.kind).length-1);
     return '<div class="pick'+(on?' on':'')+'" style="'+tv(p.kind)+'"><button type="button" class="pick-head" data-kind="'+p.kind+'" aria-pressed="'+on+'"><span><h3>'+p.title+'</h3><span class="desc">'+p.desc+'</span></span><span class="tick" aria-hidden="true"></span></button><div class="opts"'+(on?'':' hidden')+'>'+opts+'</div></div>';
   }).join('')+'</div>'+
   '<div class="actions"><span></span><button type="button" class="btn primary" id="next"'+(Object.keys(D.tracks).length?'':' disabled')+'>הבא: עד מתי? ←</button></div>';
   document.getElementById('cancel').onclick=leaveWizard;
   app.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>{const k=b.dataset.kind; if(D.tracks[k]) delete D.tracks[k]; else D.tracks[k]={kind:k,from:0}; renderPick();});
-  app.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{D.tracks.tanakh.mode=b.dataset.mode; if(b.dataset.mode!=='seq') D.tracks.tanakh.from=0; renderPick();});
+  app.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{D.tracks.tanakh.mode=b.dataset.mode; D.tracks.tanakh.from=b.dataset.mode==='nach'?5:0; delete D.tracks.tanakh.to; renderPick();});
   app.querySelectorAll('[data-part]').forEach(b=>b.onclick=()=>{const t=D.tracks.sa,i=+b.dataset.part; let p=t.parts||[0,1,2,3]; p=p.includes(i)?p.filter(x=>x!==i):[...p,i].sort(); if(!p.length) return; t.parts=p; renderPick();});
-  app.querySelectorAll('[data-from]').forEach(s=>s.onchange=()=>{D.tracks[s.dataset.from].from=+s.value});
+  app.querySelectorAll('[data-from]').forEach(s=>s.onchange=()=>{const t=D.tracks[s.dataset.from]; t.from=+s.value; if(t.to!=null&&t.to<t.from) t.to=t.from; renderPick();});
+  app.querySelectorAll('[data-to]').forEach(s=>s.onchange=()=>{const t=D.tracks[s.dataset.to], v=+s.value; if(v===s.options[s.options.length-1].value*1) delete t.to; else t.to=v; renderPick();});
+  app.querySelectorAll('[data-one]').forEach(b=>b.onclick=()=>{const t=D.tracks[b.dataset.one]; t.to=Math.max(t.from||0,(b.dataset.one==='tanakh'&&t.mode==='nach')?5:0); renderPick();});
+  app.querySelectorAll('[data-all]').forEach(b=>b.onclick=()=>{const t=D.tracks[b.dataset.all]; t.from=(b.dataset.all==='tanakh'&&t.mode==='nach')?5:0; delete t.to; renderPick();});
   document.getElementById('next').onclick=()=>{S.view='dates';render();window.scrollTo(0,0)};
 }
 function draftCfg(){
   const D=S.draft;
-  return {name:D.name.trim()||defaultName(),start:D.start,end:D.end,dows:D.dows.slice(),
-    tracks:Object.values(D.tracks).map(t=>({kind:t.kind,from:t.from||0,mode:t.kind==='tanakh'?(t.mode||'seq'):undefined,parts:t.parts}))};
+  return {v:2,name:D.name.trim()||defaultName(),start:D.start,end:D.end,dows:D.dows.slice(),
+    tracks:Object.values(D.tracks).map(t=>({kind:t.kind,from:t.from||0,to:t.to,mode:t.kind==='tanakh'?(t.mode||'seq'):undefined,parts:t.parts}))};
 }
 function defaultName(){ const D=S.draft; try{
+  const tl=Object.values(D.tracks); if(tl.length===1&&tl[0].to!=null&&tl[0].to===(tl[0].from||0)&&tl[0].kind!=='sa'){ const t=tl[0], nm=listOf(t.kind)[t.to][0]; return (t.kind==='mishnah'||t.kind==='bavli'?'מסכת ':'')+nm+' עד '+hdate(parse(D.end),true); }
   if(D.preset==='st'){const p=hparts(parse(D.end)); return 'הספק עד שמחת תורה '+gp(p.year%1000);}
   if(D.preset==='rh'){const p=hparts(addDays(parse(D.end),1)); return 'הספק עד ראש השנה '+gp(p.year%1000);}
   return 'הספק עד '+hdate(parse(D.end),true)}catch(e){return 'תכנית לימוד'} }
@@ -637,8 +656,8 @@ function updateCalc(){
     if(t.kind==='torah'&&N>187){unit='פסוקים';one='פסוק';}
     const per=W/N, rest=b.days.filter(d=>d.items[t.key].rest).length;
     const first=b.days[0].items[t.key];
-    h+='<div class="pv" style="'+tv(t.kind)+'"><b>'+t.label+'</b><span class="big">'+(per>=1?'כ-'+fmtNum(per)+' '+unit+' ביום':one+' אחד כל '+fmtNum(1/per)+' ימים')+'</span>'+
-      '<small>סך הכול '+Math.round(W).toLocaleString('he-IL')+' '+unit+(rest?' · '+rest+' ימי השלמה':'')+'</small><small>היום הראשון: '+esc(first.text)+'</small></div>';
+    h+='<div class="pv" style="'+tv(t.kind)+'"><b>'+t.label+'</b><span class="big">'+(per>=1?'כ-'+fmtNum(per)+' '+unit+' ביום':(t.kind==='mishnah'?'משנה אחת':one+' אחד')+' כל '+fmtNum(1/per)+' ימים')+'</span>'+
+      '<small>סך הכול '+Math.round(W).toLocaleString('he-IL')+' '+unit+(rest?' · '+rest+' ימי השלמה':'')+'</small>'+(per<1?'<small>רוצה ללמוד כל יום? אפשר לבחור תאריך סיום מוקדם יותר.</small>':'')+'<small>היום הראשון: '+esc(first.text)+'</small></div>';
   }
   el.innerHTML=h;
 }
