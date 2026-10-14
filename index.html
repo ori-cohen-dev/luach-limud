@@ -158,6 +158,14 @@ button.stat span::after{content:" ←"}
 @keyframes flash{0%,40%{background:var(--s-tanakh);box-shadow:0 0 0 2px var(--warn) inset}100%{box-shadow:0 0 0 2px transparent inset}}
 @media (prefers-reduced-motion:reduce){.day.flash{animation:none;background:var(--s-tanakh)}}
 details{color:var(--muted);font-size:.9rem}
+.remind{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px;color:var(--ink);font-size:.95rem}
+.remind[open]{display:flex;flex-direction:column;gap:12px}
+.remind summary{display:flex;align-items:center;gap:8px}
+.remind summary svg{width:20px;height:20px;stroke:var(--accent);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.remind p{color:var(--muted);font-size:.88rem}
+.remind .row{gap:10px}
+.remind input[type=time]{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 10px;min-height:38px}
+a.btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;box-sizing:border-box}
 details ul{padding-inline-start:18px;margin:8px 0 0}
 summary{cursor:pointer;color:var(--ink);font-weight:600}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -604,6 +612,58 @@ function updateCalc(){
   el.innerHTML=h;
 }
 
+/* ---------- Calendar reminders ---------- */
+const IN_CLAUDE=!!(window.claude&&window.claude.use);
+const APP_URL=IN_CLAUDE?'':location.href.split('#')[0].split('?')[0];
+const BYDAY=['SU','MO','TU','WE','TH','FR','SA'];
+const ymd=s=>s.replace(/-/g,'');
+function remindTime(){ return ls.get('lu-remind-time')||'20:00'; }
+function dayLine(b,d){ return b.tracks.filter(t=>!d.items[t.key].rest).map(t=>t.label+': '+d.items[t.key].text).join(' · '); }
+function gcalUrl(item,b){
+  const tm=remindTime().replace(':','')+'00';
+  const first=b.days.find(d=>d.d>=todayISO)||b.days[b.days.length-1];
+  const hh=+tm.slice(0,2), mm=+tm.slice(2,4); const endM=hh*60+mm+30;
+  const endT=pad(Math.floor(endM/60)%24)+pad(endM%60)+'00';
+  const dows=(item.cfg.dows&&item.cfg.dows.length?item.cfg.dows:[0,1,2,3,4,5,6]).map(i=>BYDAY[i]).join(',');
+  let tz='Asia/Jerusalem'; try{tz=Intl.DateTimeFormat().resolvedOptions().timeZone||tz}catch(e){}
+  const det='הלימוד של היום מחכה בלוח'+(APP_URL?':\n'+APP_URL:'.');
+  const q=new URLSearchParams({action:'TEMPLATE',text:'לימוד יומי · '+item.cfg.name,details:det,
+    dates:ymd(first.d)+'T'+tm+'/'+ymd(first.d)+'T'+endT,ctz:tz,recur:'RRULE:FREQ=WEEKLY;BYDAY='+dows+';UNTIL='+ymd(item.cfg.end)+'T235959Z'});
+  return 'https://calendar.google.com/calendar/render?'+q.toString();
+}
+function icsEsc(t){ return String(t).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n'); }
+function icsFold(line){ const enc=new TextEncoder(); if(enc.encode(line).length<=74) return line;
+  const out=[]; let cur=''; for(const ch of line){ if(enc.encode(cur+ch).length>(out.length?73:74)){ out.push(cur); cur=ch; } else cur+=ch; } out.push(cur); return out.join('\r\n '); }
+function buildIcs(item,b,range,alarmMin){
+  const tm=remindTime().replace(':','')+'00'; const hh=+tm.slice(0,2), mm=+tm.slice(2,4); const endM=hh*60+mm+30;
+  const endT=pad(Math.floor(endM/60)%24)+pad(endM%60)+'00';
+  const lim=range==='all'?'9999-12-31':iso(addDays(parse(todayISO),range==='3m'?92:31));
+  const days=b.days.filter(d=>d.d>=todayISO&&d.d<=lim&&b.tracks.some(t=>!d.items[t.key].rest));
+  const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d+/,'');
+  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Luach Limud//HE','CALSCALE:GREGORIAN','METHOD:PUBLISH','X-WR-CALNAME:'+icsEsc('לימוד יומי · '+item.cfg.name)];
+  for(const d of days){
+    const desc=b.tracks.filter(t=>!d.items[t.key].rest).map(t=>{const it=d.items[t.key];return t.label+': '+it.text+(it.links&&it.links[0]?'\n'+it.links[0].url:'');}).join('\n\n')+(APP_URL?'\n\n'+APP_URL:'');
+    L.push('BEGIN:VEVENT','UID:'+item.id+'-'+d.d+'@luachlimud','DTSTAMP:'+stamp,'DTSTART:'+ymd(d.d)+'T'+tm,'DTEND:'+ymd(d.d)+'T'+endT,
+      'SUMMARY:'+icsEsc('לימוד יומי · '+dayLine(b,d)),'DESCRIPTION:'+icsEsc(desc),
+      'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc('לימוד יומי'),'TRIGGER:-PT'+alarmMin+'M','END:VALARM','END:VEVENT');
+  }
+  L.push('END:VCALENDAR');
+  return {text:L.map(icsFold).join('\r\n')+'\r\n',count:days.length};
+}
+function remindCard(item,b){
+  const ic='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
+  return '<details class="remind" id="remind"'+(S.remindOpen?' open':'')+'><summary>'+ic+'תזכורת יומית ביומן</summary>'+
+    '<p>היומן בטלפון יזכיר לך כל יום לימוד, בשעה שתבחר.</p>'+
+    '<div class="row"><label class="f" style="flex-direction:row;align-items:center;gap:8px">שעה<input type="time" id="rm-time" value="'+esc(remindTime())+'"></label></div>'+
+    '<div class="row"><a class="btn primary" id="rm-gcal" href="'+esc(gcalUrl(item,b))+'" target="_blank" rel="noopener">הוספה ל-Google Calendar</a></div>'+
+    '<p>נוצר אירוע חוזר בימי הלימוד שלך עד סוף התכנית. כדי לקבל התראה, ודא שבאירוע מוגדרת התראה, ושמור.</p>'+
+    (IN_CLAUDE?'':'<div class="row" style="border-top:1px solid var(--line);padding-top:12px"><select id="rm-range" aria-label="טווח"><option value="1m">חודש קרוב</option><option value="3m" selected>3 חודשים</option><option value="all">עד סוף התכנית</option></select>'+
+      '<select id="rm-alarm" aria-label="מתי להזכיר"><option value="0">בשעת הלימוד</option><option value="10">10 דקות לפני</option><option value="60">שעה לפני</option></select>'+
+      '<button type="button" class="btn" id="rm-ics">הורדת קובץ יומן עם הלימוד של כל יום</button></div>'+
+      '<p>בקובץ כל יום מופיע עם מה שלומדים בו וקישור לספריא. במחשב: ב-Google Calendar נכנסים להגדרות, ייבוא, ובוחרים את הקובץ. בטלפון: פותחים את הקובץ עם אפליקציית היומן.</p>')+
+    '</details>';
+}
+
 function openPlan(id){ S.cur=id; S.view='board'; S.confirmDel=false; S.lateLast=''; ls.set('lu-last',id); const b=getBuilt(id); const i=todayIndex(b); S.week=b.days[i].w; render(); window.scrollTo(0,0); }
 function todayIndex(b){
   let i=b.days.findIndex(d=>d.d>=todayISO);
@@ -642,7 +702,7 @@ function renderBoard(full){
   const y=window.scrollY;
   app.innerHTML='<header class="topbar"><div><h1>'+esc(item.cfg.name)+'</h1><p class="sub">'+esc(hdate(parse(item.cfg.start),true))+' – '+esc(hdate(parse(item.cfg.end),true))+'</p></div><button type="button" class="btn" id="home">התכניות שלי</button></header>'+
     (!canWrite?'<p class="notice">כדי לסמן וי צריך להיות מחובר.</p>':'')+
-    todayHtml+stats+week+notes+del;
+    todayHtml+remindCard(item,b)+stats+week+notes+del;
   if(!full) window.scrollTo(0,y);
   app.classList.add('has-tabbar');
   let tb=document.getElementById('tabbar');
@@ -669,6 +729,15 @@ function renderBoard(full){
     const li=document.getElementById('day-'+x.d);
     if(li){li.scrollIntoView({behavior:'smooth',block:'center'});li.classList.add('flash');setTimeout(()=>li.classList.remove('flash'),1700);}
     flash('יום '+x.dow+' '+x.h+' ('+(ms.indexOf(x)+1)+' מתוך '+ms.length+') · לחץ שוב לבא');
+  };
+  const rm=document.getElementById('remind'); if(rm) rm.ontoggle=()=>{S.remindOpen=rm.open};
+  const rt=document.getElementById('rm-time'); if(rt) rt.onchange=()=>{ if(rt.value){ ls.set('lu-remind-time',rt.value); document.getElementById('rm-gcal').href=gcalUrl(item,b); } };
+  const ri=document.getElementById('rm-ics'); if(ri) ri.onclick=()=>{
+    const r=buildIcs(item,b,document.getElementById('rm-range').value,+document.getElementById('rm-alarm').value);
+    if(!r.count){ flash('אין ימי לימוד בטווח הזה'); return; }
+    const url=URL.createObjectURL(new Blob([r.text],{type:'text/calendar;charset=utf-8'}));
+    const a=document.createElement('a'); a.href=url; a.download='luach-limud.ics'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000);
+    flash('ירד קובץ יומן עם '+r.count+' ימי לימוד');
   };
   const dl=document.getElementById('del'); if(dl) dl.onclick=()=>{S.confirmDel=true;renderBoard()};
   const dn2=document.getElementById('del-no'); if(dn2) dn2.onclick=()=>{S.confirmDel=false;renderBoard()};
