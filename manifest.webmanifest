@@ -1,0 +1,39 @@
+{
+  "name": "לוח לימוד יומי חכם",
+  "short_name": "לוח לימוד",
+  "description": "לוח לימוד יומי מחושב: תנ״ך, משניות, ש״ס בבלי, רמב״ם ושולחן ערוך עד התאריך שבחרת.",
+  "lang": "he",
+  "dir": "rtl",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F3F5F4",
+  "theme_color": "#1F5A73",
+  "categories": [
+    "education",
+    "books",
+    "lifestyle"
+  ],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
