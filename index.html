@@ -521,7 +521,7 @@ function renderHome(){
       return '<div class="planwrap">'+card+'<div class="plan-actions">'+acts+'</div></div>';
     }).join('')+'</section><div><button type="button" class="btn primary" id="new">+ תכנית חדשה</button></div>'
     :'<section class="empty"><h2>מה תרצה להספיק?</h2><p class="sub">תנ״ך, משניות, ש״ס בבלי, רמב״ם או שולחן ערוך. בוחרים, קובעים תאריך סיום, והלוח מחשב כמה ללמוד בכל יום.</p><button type="button" class="btn primary" id="new">להתחיל</button></section>')+
-    (hasLocal||S.mode==='local'?'<details class="backup" id="backup"><summary>גיבוי והעברה למכשיר אחר</summary><p>הקוד שומר את כל התכניות והסימונים שלך. שמור אותו בהודעה לעצמך, והדבק אותו כאן במכשיר אחר כדי לשחזר.</p><div class="row"><button type="button" class="btn" id="bk-copy">העתק קוד גיבוי</button></div><label class="f">שחזור מקוד<textarea id="bk-in" placeholder="הדבק כאן קוד גיבוי"></textarea></label><div class="row"><button type="button" class="btn" id="bk-restore">שחזר</button></div></details>':'')+
+    (true?'<details class="backup" id="backup"><summary>גיבוי והעברה למכשיר אחר</summary><p>הקוד שומר את כל התכניות והסימונים שלך. שמור אותו בהודעה לעצמך, והדבק אותו כאן במכשיר אחר כדי לשחזר.</p><div class="row"><button type="button" class="btn" id="bk-copy">העתק קוד גיבוי</button></div><label class="f">שחזור מקוד<textarea id="bk-in" placeholder="הדבק כאן קוד גיבוי"></textarea></label><div class="row"><button type="button" class="btn" id="bk-restore">שחזר</button></div></details>':'')+
     '<p class="status" id="status">'+esc(S.msg)+'</p>';
   if(l.length){ app.classList.add('has-tabbar'); const tb=ensureTabbar(); tb.querySelectorAll('button').forEach(x=>x.setAttribute('aria-current',String(x.dataset.tab==='plans'))); window.onscroll=null; }
   app.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openPlan(b.dataset.open));
@@ -532,7 +532,8 @@ function renderHome(){
   document.getElementById('new').onclick=startWizard;
   const bc=document.getElementById('bk-copy');
   if(bc) bc.onclick=async()=>{
-    const o={}; for(const [k,v] of Object.entries(S.plans)) if(v.local) o[k]={cfg:v.cfg,checks:v.checks||{}};
+    const o={}; for(const [k,v] of Object.entries(S.plans)) o[k]={cfg:v.cfg,checks:v.checks||{}};
+    if(!Object.keys(o).length){ flash('אין עדיין תכניות לגבות'); return; }
     const code='LUACH1:'+btoa(unescape(encodeURIComponent(JSON.stringify(o))));
     const ta=document.getElementById('bk-in');
     try{ await navigator.clipboard.writeText(code); flash('קוד הגיבוי הועתק'); }
@@ -544,9 +545,12 @@ function renderHome(){
     try{
       if(!v.startsWith('LUACH1:')) throw 0;
       const o=JSON.parse(decodeURIComponent(escape(atob(v.slice(7)))));
-      let n=0; for(const [k,p] of Object.entries(o)){ if(p&&p.cfg){ S.plans[k]={cfg:p.cfg,checks:p.checks||{},local:true}; delete builtCache[k]; n++; } }
+      let n=0; const remote=S.mode==='remote'&&!S.forceLocal, adds=[];
+      for(const [k,p] of Object.entries(o)){ if(p&&p.cfg){ S.plans[k]={cfg:p.cfg,checks:p.checks||{},local:!remote}; delete builtCache[k]; if(remote) adds.push(planRef(k).set({cfg:p.cfg,checks:p.checks||{}})); n++; } }
       if(!n) throw 0;
-      saveLocal(); S.msg='שוחזרו '+n+' תכניות'; render();
+      if(remote) Promise.all(adds).catch(()=>{ for(const k of Object.keys(o)) if(S.plans[k]) S.plans[k].local=true; saveLocal(); });
+      else saveLocal();
+      S.msg='שוחזרו '+n+' תכניות'; render();
     }catch(e){ flash('הקוד לא תקין. ודא שהעתקת אותו במלואו.'); }
   };
 }
