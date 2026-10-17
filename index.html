@@ -416,9 +416,23 @@ function plansList(){
   if(S.legacy) l.push({id:'legacy',legacy:true,cfg:{name:'לוח לימוד תשפ״ז',start:S.legacy.days[0].d,end:S.legacy.days[S.legacy.days.length-1].d},checks:S.legacyChecks});
   return l;
 }
+const FIXED={}, FIXED_P={};
+function fixedData(src){
+  if(FIXED[src]) return FIXED[src];
+  if(src==='plan.json'&&S.legacy) return S.legacy;
+  if(!FIXED_P[src]) FIXED_P[src]=fetch(src).then(r=>r.ok?r.json():null).then(j=>{
+    if(j&&j.days&&j.days.length){ FIXED[src]=j;
+      if(S.pendingOpen){ const id=S.pendingOpen; S.pendingOpen=null; if(S.plans[id]) return openPlan(id); }
+      if(S.view==='home'||S.view==='board') render(); }
+    else { delete FIXED_P[src]; flash('לא הצלחתי לטעון את הלוח. בדוק את החיבור ונסה שוב.'); }
+  }).catch(()=>{ delete FIXED_P[src]; flash('לא הצלחתי לטעון את הלוח. בדוק את החיבור ונסה שוב.'); });
+  return null;
+}
 function getBuilt(id){
   if(id==='legacy') return builtCache.legacy||(builtCache.legacy=legacyPlan(S.legacy));
   const p=S.plans[id]; if(!p) return null;
+  if(p.cfg.fixed){ const d=fixedData(p.cfg.fixed); if(!d) return null;
+    if(!builtCache[id]||builtCache[id].src!==d) builtCache[id]={src:d,b:legacyPlan(d)}; return builtCache[id].b; }
   const k=JSON.stringify(p.cfg);
   if(!builtCache[id]||builtCache[id].k!==k) builtCache[id]={k,b:buildPlan(p.cfg)};
   return builtCache[id].b;
@@ -478,7 +492,7 @@ async function updatePlan(id,cfg){
   S.msg='התכנית עודכנה'; openPlan(id);
 }
 function startEdit(id){
-  const p=S.plans[id]; if(!p) return; const c=p.cfg;
+  const p=S.plans[id]; if(!p||p.cfg.fixed) return; const c=p.cfg;
   const tr={}; for(const t of c.tracks){ tr[t.kind]={kind:t.kind,from:t.from||0}; if(t.to!=null) tr[t.kind].to=t.to; if(t.kind==='tanakh') tr[t.kind].mode=t.mode||(t.split?'split':'seq'); if(t.parts) tr[t.kind].parts=t.parts.slice(); }
   S.draft={tracks:tr,start:c.start,end:c.end,dows:(c.dows||[0,1,2,3,4,5,6]).slice(),name:c.name||'',preset:'',editId:id};
   S.homeDel=null; S.view='pick'; render(); window.scrollTo(0,0);
@@ -512,12 +526,12 @@ function renderHome(){
   const note=(S.mode==='local'||hasLocal)?'<p class="sub">התכניות והסימונים נשמרים בטלפון שלך. מומלץ לשמור מדי פעם קוד גיבוי.</p>':'';
   app.innerHTML='<header class="topbar"><div><h1>לוח לימוד יומי חכם</h1><p class="sub">בוחרים מה להספיק ועד מתי, ומקבלים לוח יומי מחושב.</p><p class="sub" style="font-size:.85rem"><a href="privacy.html" style="color:inherit">פרטיות</a></p></div></header>'+note+
     (l.length?'<section class="plans" aria-label="התכניות שלי"><h2>התכניות שלי</h2>'+l.map(p=>{
-      const kinds=p.legacy?['torah','nach','mishnah']:trackList(p.cfg).map(t=>t.kind);
+      const kinds=(p.legacy||p.cfg.fixed)?['torah','nach','mishnah']:trackList(p.cfg).map(t=>t.kind);
       const card='<button type="button" class="plan" data-open="'+esc(p.id)+'"><h3>'+esc(p.cfg.name)+'</h3><span class="pct">'+progressOf(p)+'%</span>'+
       '<span class="tags">'+kinds.map(k=>'<span style="'+tv(k)+'"><i class="dot"></i>'+KIND[k].label+'</span>').join('')+'<span>· '+esc(hdate(parse(p.cfg.start),true))+' – '+esc(hdate(parse(p.cfg.end),true))+'</span></span></button>';
       if(p.legacy) return card;
       const acts=S.homeDel===p.id?'<span>למחוק את „'+esc(p.cfg.name)+'” ואת כל הסימונים?</span><button type="button" class="btn danger" data-delyes="'+esc(p.id)+'">כן, למחוק</button><button type="button" class="btn" data-delno="1">ביטול</button>'
-        :'<button type="button" class="btn ghost" data-edit="'+esc(p.id)+'">עריכה</button><button type="button" class="btn ghost" data-del="'+esc(p.id)+'">מחיקה</button>';
+        :(p.cfg.fixed?'':'<button type="button" class="btn ghost" data-edit="'+esc(p.id)+'">עריכה</button>')+'<button type="button" class="btn ghost" data-del="'+esc(p.id)+'">מחיקה</button>';
       return '<div class="planwrap">'+card+'<div class="plan-actions">'+acts+'</div></div>';
     }).join('')+'</section><div><button type="button" class="btn primary" id="new">+ תכנית חדשה</button></div>'
     :'<section class="empty"><h2>מה תרצה להספיק?</h2><p class="sub">תנ״ך, משניות, ש״ס בבלי, רמב״ם או שולחן ערוך. בוחרים, קובעים תאריך סיום, והלוח מחשב כמה ללמוד בכל יום.</p><button type="button" class="btn primary" id="new">להתחיל</button></section>')+
@@ -533,6 +547,9 @@ function renderHome(){
   const bc=document.getElementById('bk-copy');
   if(bc) bc.onclick=async()=>{
     const o={}; for(const [k,v] of Object.entries(S.plans)) o[k]={cfg:v.cfg,checks:v.checks||{}};
+    if(S.legacy&&!Object.values(S.plans).some(v=>v.cfg.fixed==='plan.json')){ const ch={};
+      for(const [d,c] of Object.entries(S.legacyChecks||{})){ const n=normL(c); if(n.m||n.t||n.n) ch[d]={m:n.m,t:n.t,n:n.n}; }
+      o['l5787']={cfg:{fixed:'plan.json',name:'לוח לימוד תשפ״ז',start:S.legacy.days[0].d,end:S.legacy.days[S.legacy.days.length-1].d,created:'2026-10-01T00:00:00.000Z'},checks:ch}; }
     if(!Object.keys(o).length){ flash('אין עדיין תכניות לגבות'); return; }
     const code='LUACH1:'+btoa(unescape(encodeURIComponent(JSON.stringify(o))));
     const ta=document.getElementById('bk-in');
@@ -546,7 +563,7 @@ function renderHome(){
       if(!v.startsWith('LUACH1:')) throw 0;
       const o=JSON.parse(decodeURIComponent(escape(atob(v.slice(7)))));
       let n=0; const remote=S.mode==='remote'&&!S.forceLocal, adds=[];
-      for(const [k,p] of Object.entries(o)){ if(p&&p.cfg){ S.plans[k]={cfg:p.cfg,checks:p.checks||{},local:!remote}; delete builtCache[k]; if(remote) adds.push(planRef(k).set({cfg:p.cfg,checks:p.checks||{}})); n++; } }
+      for(const [k,p] of Object.entries(o)){ if(p&&p.cfg&&!(p.cfg.fixed==='plan.json'&&S.legacy)){ S.plans[k]={cfg:p.cfg,checks:p.checks||{},local:!remote}; delete builtCache[k]; if(remote) adds.push(planRef(k).set({cfg:p.cfg,checks:p.checks||{}})); n++; } }
       if(!n) throw 0;
       if(remote) Promise.all(adds).catch(()=>{ for(const k of Object.keys(o)) if(S.plans[k]) S.plans[k].local=true; saveLocal(); });
       else saveLocal();
@@ -736,7 +753,7 @@ function remindCard(item,b){
     '</details>';
 }
 
-function openPlan(id){ S.cur=id; S.view='board'; S.confirmDel=false; S.lateLast=''; ls.set('lu-last',id); const b=getBuilt(id); const i=todayIndex(b); S.week=b.days[i].w; render(); window.scrollTo(0,0); }
+function openPlan(id){ if(id!=='legacy'&&!getBuilt(id)){ S.pendingOpen=id; flash('טוען את הלוח…'); return; } S.cur=id; S.view='board'; S.confirmDel=false; S.lateLast=''; ls.set('lu-last',id); const b=getBuilt(id); const i=todayIndex(b); S.week=b.days[i].w; render(); window.scrollTo(0,0); }
 function todayIndex(b){
   let i=b.days.findIndex(d=>d.d>=todayISO);
   if(i<0) i=b.days.length-1;
@@ -783,10 +800,10 @@ function renderBoard(full){
       return '<li id="day-'+x.d+'" class="day'+(x.d===todayISO?' is-today':'')+(missed?' missed':'')+'"><div class="when"><b>'+esc(x.dow)+'</b>'+esc(x.h)+'</div><div class="lines">'+
         b.tracks.map(t=>{const it=x.items[t.key];return '<div class="line'+(it.rest?' rest':'')+'" style="'+tv(t.kind)+'"><span><span class="k">'+esc(t.label)+'</span>'+esc(it.rest?'השלמה':it.text)+(it.rest?'':lk(it))+'</span>'+(it.rest?'':box(x.d,t))+'</div>'}).join('')+'</div></li>'}).join(''):'<li class="day"><div></div><div class="sub">אין ימי לימוד בשבוע הזה.</div></li>')+'</ul>'+
     '<div style="text-align:center;margin-top:10px"><button class="btn" id="go-today" type="button">חזרה לשבוע הנוכחי</button></div></section>';
-  const notes=item.legacy&&b.notes&&b.notes.length?'<details><summary>הערות ללוח</summary><ul>'+b.notes.map(n=>'<li>'+esc(n.replace(/^•\s*/,''))+'</li>').join('')+'</ul></details>':'';
-  const del=item.legacy?'':'<div class="confirm manage">'+(S.confirmDel?'<span>למחוק את התכנית ואת כל הסימונים שלה?</span><button type="button" class="btn danger" id="del-yes">כן, למחוק</button><button type="button" class="btn" id="del-no">ביטול</button>':'<button type="button" class="btn" id="edit">עריכת התכנית</button><button type="button" class="btn ghost" id="del">מחיקת התכנית</button>')+'</div>';
+  const notes=(item.legacy||item.cfg.fixed)&&b.notes&&b.notes.length?'<details><summary>הערות ללוח</summary><ul>'+b.notes.map(n=>'<li>'+esc(n.replace(/^•\s*/,''))+'</li>').join('')+'</ul></details>':'';
+  const del=item.legacy?'':'<div class="confirm manage">'+(S.confirmDel?'<span>למחוק את התכנית ואת כל הסימונים שלה?</span><button type="button" class="btn danger" id="del-yes">כן, למחוק</button><button type="button" class="btn" id="del-no">ביטול</button>':(item.cfg.fixed?'':'<button type="button" class="btn" id="edit">עריכת התכנית</button>')+'<button type="button" class="btn ghost" id="del">מחיקת התכנית</button>')+'</div>';
   const y=window.scrollY;
-  app.innerHTML='<header class="topbar"><div><h1>'+esc(item.cfg.name)+'</h1><p class="sub">'+esc(hdate(parse(item.cfg.start),true))+' – '+esc(hdate(parse(item.cfg.end),true))+'</p></div><div class="row">'+(item.legacy?'':'<button type="button" class="btn ghost" id="edit-top">עריכה</button>')+'<button type="button" class="btn" id="home">התכניות שלי</button></div></header>'+
+  app.innerHTML='<header class="topbar"><div><h1>'+esc(item.cfg.name)+'</h1><p class="sub">'+esc(hdate(parse(item.cfg.start),true))+' – '+esc(hdate(parse(item.cfg.end),true))+'</p></div><div class="row">'+(item.legacy||item.cfg.fixed?'':'<button type="button" class="btn ghost" id="edit-top">עריכה</button>')+'<button type="button" class="btn" id="home">התכניות שלי</button></div></header>'+
     (!canWrite?'<p class="notice">כדי לסמן וי צריך להיות מחובר.</p>':'')+
     todayHtml+remindCard(item,b)+stats+week+notes+del;
   if(!full) window.scrollTo(0,y);
