@@ -170,6 +170,7 @@ details ul{padding-inline-start:18px;margin:8px 0 0}
 summary{cursor:pointer;color:var(--ink);font-weight:600}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .range{display:grid;grid-template-columns:1fr 1fr;gap:8px}.range select{width:100%}
+.ver{font-size:.75rem;color:var(--muted);text-align:center;opacity:.7}
 .planwrap{display:flex;flex-direction:column;gap:2px}
 .plan-actions{display:flex;gap:2px;justify-content:flex-end;align-items:center;flex-wrap:wrap;font-size:.88rem;color:var(--muted)}
 .plan-actions .btn{padding-block:4px}
@@ -177,6 +178,7 @@ summary{cursor:pointer;color:var(--ink);font-weight:600}
 .backup{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
 .backup[open]{display:flex;flex-direction:column;gap:10px}
 .backup p{color:var(--muted)}
+.backup #bk-out{min-height:60px}
 .backup textarea{font:inherit;font-size:.85rem;width:100%;min-height:84px;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg);color:var(--ink);direction:ltr}
 @media (max-width:420px){.day{grid-template-columns:3.6rem 1fr}.track .what{font-size:1.08rem}}
 </style>
@@ -416,6 +418,7 @@ function plansList(){
   if(S.legacy) l.push({id:'legacy',legacy:true,cfg:{name:'לוח לימוד תשפ״ז',start:S.legacy.days[0].d,end:S.legacy.days[S.legacy.days.length-1].d},checks:S.legacyChecks});
   return l;
 }
+const APP_VER='14';
 const FIXED={}, FIXED_P={};
 function fixedData(src){
   if(FIXED[src]) return FIXED[src];
@@ -536,7 +539,7 @@ function renderHome(){
     }).join('')+'</section><div><button type="button" class="btn primary" id="new">+ תכנית חדשה</button></div>'
     :'<section class="empty"><h2>מה תרצה להספיק?</h2><p class="sub">תנ״ך, משניות, ש״ס בבלי, רמב״ם או שולחן ערוך. בוחרים, קובעים תאריך סיום, והלוח מחשב כמה ללמוד בכל יום.</p><button type="button" class="btn primary" id="new">להתחיל</button></section>')+
     (true?'<details class="backup" id="backup"><summary>גיבוי והעברה למכשיר אחר</summary><p>הקוד שומר את כל התכניות והסימונים שלך. שמור אותו בהודעה לעצמך, והדבק אותו כאן במכשיר אחר כדי לשחזר.</p><div class="row"><button type="button" class="btn" id="bk-copy">העתק קוד גיבוי</button></div><label class="f">שחזור מקוד<textarea id="bk-in" placeholder="הדבק כאן קוד גיבוי"></textarea></label><div class="row"><button type="button" class="btn" id="bk-restore">שחזר</button></div></details>':'')+
-    '<p class="status" id="status">'+esc(S.msg)+'</p>';
+    '<p class="status" id="status">'+esc(S.msg)+'</p><p class="ver">גרסה '+APP_VER+'</p>';
   if(l.length){ app.classList.add('has-tabbar'); const tb=ensureTabbar(); tb.querySelectorAll('button').forEach(x=>x.setAttribute('aria-current',String(x.dataset.tab==='plans'))); window.onscroll=null; }
   app.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openPlan(b.dataset.open));
   app.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>startEdit(b.dataset.edit));
@@ -552,23 +555,34 @@ function renderHome(){
       o['l5787']={cfg:{fixed:'plan.json',name:'לוח לימוד תשפ״ז',start:S.legacy.days[0].d,end:S.legacy.days[S.legacy.days.length-1].d,created:'2026-10-01T00:00:00.000Z'},checks:ch}; }
     if(!Object.keys(o).length){ flash('אין עדיין תכניות לגבות'); return; }
     const code='LUACH1:'+btoa(unescape(encodeURIComponent(JSON.stringify(o))));
-    const ta=document.getElementById('bk-in');
-    try{ await navigator.clipboard.writeText(code); flash('קוד הגיבוי הועתק'); }
-    catch(e){ ta.value=code; ta.focus(); ta.select(); flash('סמן והעתק את הקוד שבתיבה'); }
+    let out=document.getElementById('bk-out');
+    if(!out){ out=document.createElement('textarea'); out.id='bk-out'; out.readOnly=true; out.setAttribute('aria-label','קוד הגיבוי שלך'); bc.closest('.row').after(out); }
+    out.value=code;
+    const names=Object.values(o).map(x=>x.cfg.name).join(', ');
+    try{ await navigator.clipboard.writeText(code); flash('הועתק קוד עם '+Object.keys(o).length+' תכניות: '+names); }
+    catch(e){ out.focus(); out.select(); flash('לא הצלחתי להעתיק אוטומטית. סמן את כל הקוד שבתיבה והעתק ('+Object.keys(o).length+' תכניות: '+names+')'); }
   };
   const br=document.getElementById('bk-restore');
   if(br) br.onclick=()=>{
-    const v=document.getElementById('bk-in').value.trim();
-    try{
-      if(!v.startsWith('LUACH1:')) throw 0;
-      const o=JSON.parse(decodeURIComponent(escape(atob(v.slice(7)))));
-      let n=0; const remote=S.mode==='remote'&&!S.forceLocal, adds=[];
-      for(const [k,p] of Object.entries(o)){ if(p&&p.cfg&&!(p.cfg.fixed==='plan.json'&&S.legacy)){ S.plans[k]={cfg:p.cfg,checks:p.checks||{},local:!remote}; delete builtCache[k]; if(remote) adds.push(planRef(k).set({cfg:p.cfg,checks:p.checks||{}})); n++; } }
-      if(!n) throw 0;
-      if(remote) Promise.all(adds).catch(()=>{ for(const k of Object.keys(o)) if(S.plans[k]) S.plans[k].local=true; saveLocal(); });
-      else saveLocal();
-      S.msg='שוחזרו '+n+' תכניות'; render();
-    }catch(e){ flash('הקוד לא תקין. ודא שהעתקת אותו במלואו.'); }
+    const raw=document.getElementById('bk-in').value||'';
+    const at=raw.indexOf('LUACH1:');
+    if(at<0){ flash('לא נמצא קוד גיבוי בטקסט שהודבק. הקוד מתחיל ב-LUACH1:'); return; }
+    const b64=raw.slice(at+7).replace(/[^A-Za-z0-9+/=]/g,'');
+    let o;
+    try{ o=JSON.parse(decodeURIComponent(escape(atob(b64)))); if(!o||typeof o!=='object') throw 0; }
+    catch(e){ flash('הקוד חתוך או פגום ('+b64.length+' תווים). העתק אותו שוב במלואו.'); return; }
+    let n=0, skipped=0; const remote=S.mode==='remote'&&!S.forceLocal, adds=[];
+    for(const [k,p] of Object.entries(o)){
+      if(!p||!p.cfg||!(p.cfg.fixed||Array.isArray(p.cfg.tracks))) continue;
+      if(p.cfg.fixed==='plan.json'&&S.legacy){ skipped++; continue; }
+      S.plans[k]={cfg:p.cfg,checks:p.checks||{},local:!remote}; delete builtCache[k];
+      if(remote) adds.push(planRef(k).set({cfg:p.cfg,checks:p.checks||{}})); n++;
+    }
+    if(!n){ flash(skipped?'כל התכניות שבקוד כבר קיימות כאן.':'לא נמצאו תכניות בקוד.'); return; }
+    if(remote) Promise.all(adds).catch(()=>{ for(const k of Object.keys(o)) if(S.plans[k]) S.plans[k].local=true; saveLocal(); });
+    else saveLocal();
+    S.msg='שוחזרו '+n+' תכניות';
+    try{ render(); }catch(e){ console.error(e); flash('התכניות שוחזרו. אם הן לא מופיעות, סגור ופתח את האפליקציה.'); }
   };
 }
 function startWizard(){
