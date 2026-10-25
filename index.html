@@ -182,7 +182,8 @@ summary{cursor:pointer;color:var(--ink);font-weight:600}
 .backup textarea{font:inherit;font-size:.85rem;width:100%;min-height:84px;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg);color:var(--ink);direction:ltr}
 .sydot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--ok);margin-inline:2px 8px;vertical-align:middle}
 .sydot[data-s="err"]{background:var(--warn)}
-.sy-state{color:var(--ink)!important;font-size:.92rem}
+.sy-state{color:var(--muted);font-size:.84rem;font-weight:400;margin-inline-start:6px}
+.sy-state:not(:empty)::before{content:"· "}
 .sycode{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:1.05rem;letter-spacing:.06em;background:var(--bg);border:1px dashed var(--line);border-radius:8px;padding:10px 12px;text-align:center;overflow-wrap:anywhere;-webkit-user-select:all;user-select:all}
 .sy-note{font-size:.84rem}
 .sync input[type=text]{direction:ltr;text-align:left;font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.04em}
@@ -424,7 +425,7 @@ function plansList(){
   if(S.legacy) l.push({id:'legacy',legacy:true,cfg:{name:'לוח לימוד תשפ״ז',start:S.legacy.days[0].d,end:S.legacy.days[S.legacy.days.length-1].d},checks:S.legacyChecks});
   return l;
 }
-const APP_VER='17';
+const APP_VER='18';
 const FIXED={}, FIXED_P={};
 function fixedData(src){
   if(FIXED[src]) return FIXED[src];
@@ -967,19 +968,18 @@ const Sync=(function(){
     return st.last?'מסונכרן · '+ago(st.last):'';
   }
   function status(){ const el=document.getElementById('sy-state'); if(el) el.textContent=statusText(); const d=document.getElementById('sy-dot'); if(d) d.dataset.s=st.err?'err':'ok'; }
-  async function start(){ st={code:newCode()}; save(); renderHome(); await now(); flash('הסנכרון פעיל. עכשיו חבר את המכשיר השני עם הקוד.'); }
+  async function start(){ st={code:newCode()}; save(); S.syncOpen=false; renderHome(); await now(); flash('הסנכרון פעיל. עכשיו חבר את המכשיר השני עם הקוד.'); }
   async function join(raw){
     const c=clean(raw); if(!c){ flash('הקוד לא תקין. הוא נראה כך: LS-XXXXX-XXXXX-XXXXX-XXXXX'); return; }
     try{ const {state}=await get(c); if(!state){ flash('לא נמצא סנכרון עם הקוד הזה. בדוק שהעתקת את כולו.'); return; } }
     catch(e){ flash('אין חיבור לאינטרנט כרגע. נסה שוב בעוד רגע.'); return; }
-    st={code:c}; save(); S.syncLink=null; await now(); renderHome();
+    st={code:c}; save(); S.syncLink=null; S.syncOpen=false; await now(); renderHome();
     flash(st.err?'המכשיר חובר, אבל הסנכרון הראשון לא הצליח. ננסה שוב.':'המכשיר חובר. התכניות והסימונים מוזגו משני המכשירים.');
   }
   function stop(){ st={}; save(); renderHome(); flash('המכשיר הזה נותק מהסנכרון. התכניות נשארו בו.'); }
   function card(){
     if(!ON) return '';
-    if(st.code) return '<details class="backup sync" id="sync"'+(S.syncOpen?' open':'')+'><summary><i class="sydot" id="sy-dot" data-s="'+(st.err?'err':'ok')+'"></i>סנכרון בין מכשירים</summary>'+
-      '<p id="sy-state" class="sy-state">'+esc(statusText())+'</p>'+
+    if(st.code) return '<details class="backup sync" id="sync"'+(S.syncOpen?' open':'')+'><summary><i class="sydot" id="sy-dot" data-s="'+(st.err?'err':'ok')+'"></i>סנכרון בין מכשירים <span id="sy-state" class="sy-state">'+esc(statusText())+'</span></summary>'+
       '<p>כדי לחבר מכשיר נוסף, פתח בו את האפליקציה והדבק את הקוד הזה (או שלח לעצמך את הקישור):</p>'+
       '<div class="sycode" dir="ltr">'+esc(pretty(st.code))+'</div>'+
       '<div class="row"><button type="button" class="btn" id="sy-copy">העתק קוד</button>'+(navigator.share?'<button type="button" class="btn" id="sy-share">שלח קישור</button>':'')+'<button type="button" class="btn" id="sy-now">סנכרן עכשיו</button></div>'+
