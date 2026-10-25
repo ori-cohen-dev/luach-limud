@@ -424,7 +424,7 @@ function plansList(){
   if(S.legacy) l.push({id:'legacy',legacy:true,cfg:{name:'לוח לימוד תשפ״ז',start:S.legacy.days[0].d,end:S.legacy.days[S.legacy.days.length-1].d},checks:S.legacyChecks});
   return l;
 }
-const APP_VER='16';
+const APP_VER='17';
 const FIXED={}, FIXED_P={};
 function fixedData(src){
   if(FIXED[src]) return FIXED[src];
@@ -871,7 +871,7 @@ app.addEventListener('change',e=>{
    The whole state is kept as one JSON string in Firestore at sync/<code>, reached through the REST API (no SDK, no sign-in).
    Every device merges remote with local before writing back, so nothing is lost when two phones mark at once:
    each mark keeps the time it was made (ct), the newer value wins; plan settings follow the newer edit; deleted plans leave a tombstone. */
-const SYNC_CFG={projectId:'',apiKey:''};   // filled in after the Firebase project is created
+const SYNC_CFG={projectId:'luach-limud',apiKey:'AIzaSyAmynZVxaoaEq9BqkqlxUxWT933o0zoKkI'};   // filled in after the Firebase project is created
 const Sync=(function(){
   const ON=!!(SYNC_CFG.projectId&&SYNC_CFG.apiKey);
   const ABC='0123456789ABCDEFGHJKMNPQRSTVWXYZ';
