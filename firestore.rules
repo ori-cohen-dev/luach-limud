@@ -1,0 +1,18 @@
+rules_version = '2';
+// Sync docs live at sync/<code>. The code (20 random characters) is the only key, so:
+// reading one doc by its exact code is allowed, listing all docs is not, and writes must keep the expected shape.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /sync/{code} {
+      allow get: if code.matches('^[0-9A-HJKMNP-TV-Z]{20}$');
+      allow list, delete: if false;
+      allow create, update: if code.matches('^[0-9A-HJKMNP-TV-Z]{20}$')
+        && request.resource.data.keys().hasOnly(['data', 'v'])
+        && request.resource.data.data is string
+        && request.resource.data.data.size() < 900000;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

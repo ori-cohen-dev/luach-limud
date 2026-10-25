@@ -180,6 +180,12 @@ summary{cursor:pointer;color:var(--ink);font-weight:600}
 .backup p{color:var(--muted)}
 .backup #bk-out{min-height:60px}
 .backup textarea{font:inherit;font-size:.85rem;width:100%;min-height:84px;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg);color:var(--ink);direction:ltr}
+.sydot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--ok);margin-inline:2px 8px;vertical-align:middle}
+.sydot[data-s="err"]{background:var(--warn)}
+.sy-state{color:var(--ink)!important;font-size:.92rem}
+.sycode{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:1.05rem;letter-spacing:.06em;background:var(--bg);border:1px dashed var(--line);border-radius:8px;padding:10px 12px;text-align:center;overflow-wrap:anywhere;-webkit-user-select:all;user-select:all}
+.sy-note{font-size:.84rem}
+.sync input[type=text]{direction:ltr;text-align:left;font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.04em}
 @media (max-width:420px){.day{grid-template-columns:3.6rem 1fr}.track .what{font-size:1.08rem}}
 </style>
 </head>
@@ -418,7 +424,7 @@ function plansList(){
   if(S.legacy) l.push({id:'legacy',legacy:true,cfg:{name:'לוח לימוד תשפ״ז',start:S.legacy.days[0].d,end:S.legacy.days[S.legacy.days.length-1].d},checks:S.legacyChecks});
   return l;
 }
-const APP_VER='15';
+const APP_VER='16';
 const FIXED={}, FIXED_P={};
 function fixedData(src){
   if(FIXED[src]) return FIXED[src];
@@ -444,7 +450,7 @@ const normL=c=>{c=c||{};return {m:!!c.m,t:!!c.t,n:c.n===undefined?!!c.t:!!c.n}};
 function checksFor(id){ return id==='legacy'?S.legacyChecks:((S.plans[id]&&S.plans[id].checks)||{}); }
 function isDone(id,date,key){ const c=checksFor(id)[date]; if(id==='legacy') return normL(c)[key]; return !!(c&&c[key]); }
 function localPlans(){ let o={}; try{o=JSON.parse(ls.get('lu-plans')||'{}')||{}}catch(e){} for(const k in o) o[k].local=true; return o; }
-function saveLocal(){ const o={}; for(const [k,v] of Object.entries(S.plans)) if(v.local) o[k]={cfg:v.cfg,checks:v.checks||{}}; ls.set('lu-plans',JSON.stringify(o)); }
+function saveLocal(fromSync){ const o={}; for(const [k,v] of Object.entries(S.plans)) if(v.local) o[k]={cfg:v.cfg,checks:v.checks||{},ct:v.ct||{}}; ls.set('lu-plans',JSON.stringify(o)); if(!fromSync) Sync.soon(); }
 const queues={};
 function enqueue(id,fn){ queues[id]=(queues[id]||Promise.resolve()).then(fn,fn); return queues[id]; }
 function planRef(id){ return S.db.collection('data/users/'+S.uid).doc('plan-'+id); }
@@ -461,7 +467,7 @@ async function setCheck(id,date,key,val){
   const p=S.plans[id]; if(!p) return;
   p.checks=p.checks||{}; const prev=Object.assign({},p.checks[date]||{});
   p.checks[date]=Object.assign({},prev,{[key]:val}); renderBoard();
-  if(p.local){saveLocal(); flash('נשמר'); return;}
+  if(p.local){ p.ct=p.ct||{}; p.ct[date+'|'+key]=Date.now(); saveLocal(); flash('נשמר'); return;}
   try{ await enqueue(id,()=>planRef(id).update({checks:{[date]:{[key]:val}}})); flash('נשמר'); }
   catch(e){ p.checks[date]=prev; renderBoard(); flash(e&&e.code==='invalid_argument'?'אין לך הרשאה לשמור. בקש מבעל הדף הרשאת משתתף.':'לא הצלחתי לשמור את הסימון. נסה שוב.'); }
 }
@@ -482,7 +488,7 @@ async function deletePlan(id){
   const keep=S.plans[id]; delete S.plans[id]; delete builtCache[id];
   S.cur=null; S.view='home'; render();
   if(!keep.local){ try{await planRef(id).delete()}catch(e){S.plans[id]=keep; render(); flash('המחיקה לא הצליחה. נסה שוב.');} }
-  else saveLocal();
+  else { Sync.tomb(id); saveLocal(); }
 }
 
 async function updatePlan(id,cfg){
@@ -526,7 +532,7 @@ function progressOf(item){
 function renderHome(){
   const l=plansList();
   const hasLocal=l.some(p=>S.plans[p.id]&&S.plans[p.id].local);
-  const note=(S.mode==='local'||hasLocal)?'<p class="sub">התכניות והסימונים נשמרים בטלפון שלך. מומלץ לשמור מדי פעם קוד גיבוי.</p>':'';
+  const note=(S.mode==='local'||hasLocal)?(Sync.on?'<p class="sub">התכניות והסימונים נשמרים בטלפון ומסונכרנים עם המכשירים שחיברת.</p>':'<p class="sub">התכניות והסימונים נשמרים בטלפון שלך. מומלץ לשמור מדי פעם קוד גיבוי.</p>'):'';
   app.innerHTML='<header class="topbar"><div><h1>לוח לימוד יומי חכם</h1><p class="sub">בוחרים מה להספיק ועד מתי, ומקבלים לוח יומי מחושב.</p><p class="sub" style="font-size:.85rem"><a href="privacy.html" style="color:inherit">פרטיות</a></p></div></header>'+note+
     (l.length?'<section class="plans" aria-label="התכניות שלי"><h2>התכניות שלי</h2>'+l.map(p=>{
       const kinds=(p.legacy||p.cfg.fixed)?['torah','nach','mishnah']:trackList(p.cfg).map(t=>t.kind);
@@ -538,7 +544,7 @@ function renderHome(){
       return '<div class="planwrap">'+card+'<div class="plan-actions">'+acts+'</div></div>';
     }).join('')+'</section><div><button type="button" class="btn primary" id="new">+ תכנית חדשה</button></div>'
     :'<section class="empty"><h2>מה תרצה להספיק?</h2><p class="sub">תנ״ך, משניות, ש״ס בבלי, רמב״ם או שולחן ערוך. בוחרים, קובעים תאריך סיום, והלוח מחשב כמה ללמוד בכל יום.</p><button type="button" class="btn primary" id="new">להתחיל</button></section>')+
-    (true?'<details class="backup" id="backup"><summary>גיבוי והעברה למכשיר אחר</summary><p>הקוד שומר את כל התכניות והסימונים שלך. שמור אותו בהודעה לעצמך, והדבק אותו כאן במכשיר אחר כדי לשחזר.</p><div class="row"><button type="button" class="btn" id="bk-copy">העתק קוד גיבוי</button></div><label class="f">שחזור מקוד<textarea id="bk-in" placeholder="הדבק כאן קוד גיבוי"></textarea></label><div class="row"><button type="button" class="btn" id="bk-restore">שחזר</button></div></details>':'')+
+    Sync.card()+(true?'<details class="backup" id="backup"><summary>גיבוי והעברה למכשיר אחר</summary><p>הקוד שומר את כל התכניות והסימונים שלך. שמור אותו בהודעה לעצמך, והדבק אותו כאן במכשיר אחר כדי לשחזר.</p><div class="row"><button type="button" class="btn" id="bk-copy">העתק קוד גיבוי</button></div><label class="f">שחזור מקוד<textarea id="bk-in" placeholder="הדבק כאן קוד גיבוי"></textarea></label><div class="row"><button type="button" class="btn" id="bk-restore">שחזר</button></div></details>':'')+
     '<p class="status" id="status">'+esc(S.msg)+'</p><p class="ver">גרסה '+APP_VER+'</p>';
   if(l.length){ app.classList.add('has-tabbar'); const tb=ensureTabbar(); tb.querySelectorAll('button').forEach(x=>x.setAttribute('aria-current',String(x.dataset.tab==='plans'))); window.onscroll=null; }
   app.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openPlan(b.dataset.open));
@@ -547,6 +553,7 @@ function renderHome(){
   app.querySelectorAll('[data-delno]').forEach(b=>b.onclick=()=>{S.homeDel=null;renderHome()});
   app.querySelectorAll('[data-delyes]').forEach(b=>b.onclick=()=>{const id=b.dataset.delyes; S.homeDel=null; deletePlan(id).then(()=>flash('התכנית נמחקה'))});
   document.getElementById('new').onclick=startWizard;
+  Sync.wire();
   const bc=document.getElementById('bk-copy');
   if(bc) bc.onclick=async()=>{
     const o={}; for(const [k,v] of Object.entries(S.plans)) o[k]={cfg:v.cfg,checks:v.checks||{}};
@@ -859,6 +866,158 @@ app.addEventListener('change',e=>{
   setCheck(S.cur,el.dataset.date,el.dataset.k,el.checked);
 });
 
+/* ---------- Sync between devices ----------
+   Each group of devices shares one random sync code (100 bits, unguessable).
+   The whole state is kept as one JSON string in Firestore at sync/<code>, reached through the REST API (no SDK, no sign-in).
+   Every device merges remote with local before writing back, so nothing is lost when two phones mark at once:
+   each mark keeps the time it was made (ct), the newer value wins; plan settings follow the newer edit; deleted plans leave a tombstone. */
+const SYNC_CFG={projectId:'',apiKey:''};   // filled in after the Firebase project is created
+const Sync=(function(){
+  const ON=!!(SYNC_CFG.projectId&&SYNC_CFG.apiKey);
+  const ABC='0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+  let st={}; try{st=JSON.parse(ls.get('lu-sync')||'{}')||{}}catch(e){}
+  let timer=null, busy=null, again=false;
+  const save=()=>ls.set('lu-sync',JSON.stringify(st));
+  const tombs=()=>{ try{return JSON.parse(ls.get('lu-del')||'{}')||{}}catch(e){return {}} };
+  const url=c=>'https://firestore.googleapis.com/v1/projects/'+SYNC_CFG.projectId+'/databases/(default)/documents/sync/'+c+'?key='+SYNC_CFG.apiKey;
+  function newCode(){ const b=new Uint8Array(20); crypto.getRandomValues(b); return Array.from(b,x=>ABC[x&31]).join(''); }
+  function clean(raw){ let c=String(raw||'').toUpperCase(); const h=c.match(/SYNC=([0-9A-Z-]+)/); if(h) c=h[1];
+    c=c.replace(/[^0-9A-Z]/g,''); if(c.length===22&&c.startsWith('LS')) c=c.slice(2); c=c.replace(/O/g,'0').replace(/[IL]/g,'1'); return /^[0-9A-HJKMNP-TV-Z]{20}$/.test(c)?c:null; }
+  const pretty=c=>'LS-'+c.match(/.{5}/g).join('-');
+  const link=c=>location.origin+location.pathname+'#sync='+c;
+  const cfgTs=p=>Date.parse((p.cfg&&(p.cfg.edited||p.cfg.created))||0)||0;
+  function planTs(p){ let t=cfgTs(p); for(const v of Object.values(p.ct||{})) if(v>t) t=v; return t; }
+  function stable(x){ if(Array.isArray(x)) return '['+x.map(stable).join(',')+']'; if(x&&typeof x==='object') return '{'+Object.keys(x).sort().map(k=>JSON.stringify(k)+':'+stable(x[k])).join(',')+'}'; return JSON.stringify(x); }
+  function mergePlan(a,b){
+    const cfg=cfgTs(b)>cfgTs(a)?b.cfg:a.cfg, checks={}, ct={};
+    const dates=new Set([...Object.keys(a.checks||{}),...Object.keys(b.checks||{})]);
+    for(const d of dates){ const ca=(a.checks||{})[d]||{}, cb=(b.checks||{})[d]||{}, row={};
+      for(const k of new Set([...Object.keys(ca),...Object.keys(cb)])){
+        if(typeof ca[k]!=='boolean'&&typeof cb[k]!=='boolean') continue;
+        const ta=(a.ct||{})[d+'|'+k]||0, tb=(b.ct||{})[d+'|'+k]||0;
+        row[k]=ta>tb?!!ca[k]:tb>ta?!!cb[k]:!!(ca[k]||cb[k]);
+        if(ta||tb) ct[d+'|'+k]=Math.max(ta,tb); }
+      if(Object.keys(row).length) checks[d]=row; }
+    return {cfg,checks,ct};
+  }
+  function merge(a,b){
+    const del=Object.assign({},a.del||{}); for(const [k,t] of Object.entries(b.del||{})) if(!(del[k]>=t)) del[k]=t;
+    const plans={};
+    for(const id of new Set([...Object.keys(a.plans||{}),...Object.keys(b.plans||{})])){
+      const pa=(a.plans||{})[id], pb=(b.plans||{})[id];
+      const p=pa&&pb?mergePlan(pa,pb):mergePlan(pa||pb,pa||pb);
+      if(del[id]&&del[id]>=planTs(p)) continue; else delete del[id];
+      plans[id]=p; }
+    return {v:1,plans,del};
+  }
+  function localState(){ const plans={}; for(const [k,v] of Object.entries(S.plans)) if(v.local) plans[k]={cfg:v.cfg,checks:v.checks||{},ct:v.ct||{}}; return {v:1,plans,del:tombs()}; }
+  function apply(m){
+    const before=stable(localState().plans);
+    ls.set('lu-del',JSON.stringify(m.del||{}));
+    if(stable(m.plans)===before) return;
+    for(const k of Object.keys(S.plans)) if(S.plans[k].local&&!m.plans[k]) delete S.plans[k];
+    for(const [k,p] of Object.entries(m.plans)) S.plans[k]={cfg:p.cfg,checks:p.checks,ct:p.ct,local:true};
+    saveLocal(true);
+    if(S.cur&&!S.plans[S.cur]&&S.view==='board'){ S.cur=null; S.view='home'; }
+    if(S.view==='home') render(); else if(S.view==='board') renderBoard();
+  }
+  async function get(c){
+    const r=await fetch(url(c),{cache:'no-store'});
+    if(r.status===404) return {state:null,time:null};
+    if(!r.ok) throw new Error('get '+r.status);
+    const j=await r.json(); let state=null;
+    try{ state=JSON.parse(j.fields.data.stringValue); }catch(e){}
+    return {state,time:j.updateTime};
+  }
+  async function put(c,state,time){
+    const pre=time?'&currentDocument.updateTime='+encodeURIComponent(time):'&currentDocument.exists=false';
+    const r=await fetch(url(c)+pre,{method:'PATCH',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({fields:{data:{stringValue:JSON.stringify(state)},v:{integerValue:'1'}}})});
+    if(r.status===400||r.status===409||r.status===412) return false;   // someone wrote in between: read again and merge
+    if(!r.ok) throw new Error('put '+r.status);
+    return true;
+  }
+  async function run(){
+    const c=st.code; if(!c) return;
+    for(let i=0;i<4;i++){
+      const {state,time}=await get(c);
+      const m=state?merge(localState(),state):localState();
+      apply(m);
+      if(state&&stable(m)===stable(merge(state,state))) break;
+      if(await put(c,m,time)) break;
+      if(i===3) throw new Error('busy');
+    }
+    st.last=Date.now(); st.err=''; save(); status();
+  }
+  function now(){
+    if(!ON||!st.code) return Promise.resolve();
+    if(busy){ again=true; return busy; }
+    busy=run().catch(e=>{ st.err=navigator.onLine===false?'offline':'fail'; save(); status(); })
+      .finally(()=>{ busy=null; status(); if(again){ again=false; now(); } });
+    return busy;
+  }
+  function soon(){ if(!ON||!st.code) return; clearTimeout(timer); timer=setTimeout(now,1200); }
+  function tomb(id){ const t=tombs(); t[id]=Date.now(); ls.set('lu-del',JSON.stringify(t)); }
+  function ago(t){ const s=Math.round((Date.now()-t)/1000); if(s<45) return 'לפני רגע'; const m=Math.round(s/60); if(m<60) return 'לפני '+(m===1?'דקה':m+' דקות'); const h=Math.round(m/60); if(h<24) return 'לפני '+(h===1?'שעה':h+' שעות'); return new Date(t).toLocaleDateString('he-IL'); }
+  function statusText(){
+    if(!st.code) return '';
+    if(busy) return 'מסנכרן…';
+    if(st.err==='offline') return 'אין חיבור לאינטרנט. הסימונים נשמרו בטלפון ויסונכרנו כשהחיבור יחזור.';
+    if(st.err) return 'הסנכרון האחרון לא הצליח. ננסה שוב אוטומטית.';
+    return st.last?'מסונכרן · '+ago(st.last):'';
+  }
+  function status(){ const el=document.getElementById('sy-state'); if(el) el.textContent=statusText(); const d=document.getElementById('sy-dot'); if(d) d.dataset.s=st.err?'err':'ok'; }
+  async function start(){ st={code:newCode()}; save(); renderHome(); await now(); flash('הסנכרון פעיל. עכשיו חבר את המכשיר השני עם הקוד.'); }
+  async function join(raw){
+    const c=clean(raw); if(!c){ flash('הקוד לא תקין. הוא נראה כך: LS-XXXXX-XXXXX-XXXXX-XXXXX'); return; }
+    try{ const {state}=await get(c); if(!state){ flash('לא נמצא סנכרון עם הקוד הזה. בדוק שהעתקת את כולו.'); return; } }
+    catch(e){ flash('אין חיבור לאינטרנט כרגע. נסה שוב בעוד רגע.'); return; }
+    st={code:c}; save(); S.syncLink=null; await now(); renderHome();
+    flash(st.err?'המכשיר חובר, אבל הסנכרון הראשון לא הצליח. ננסה שוב.':'המכשיר חובר. התכניות והסימונים מוזגו משני המכשירים.');
+  }
+  function stop(){ st={}; save(); renderHome(); flash('המכשיר הזה נותק מהסנכרון. התכניות נשארו בו.'); }
+  function card(){
+    if(!ON) return '';
+    if(st.code) return '<details class="backup sync" id="sync"'+(S.syncOpen?' open':'')+'><summary><i class="sydot" id="sy-dot" data-s="'+(st.err?'err':'ok')+'"></i>סנכרון בין מכשירים</summary>'+
+      '<p id="sy-state" class="sy-state">'+esc(statusText())+'</p>'+
+      '<p>כדי לחבר מכשיר נוסף, פתח בו את האפליקציה והדבק את הקוד הזה (או שלח לעצמך את הקישור):</p>'+
+      '<div class="sycode" dir="ltr">'+esc(pretty(st.code))+'</div>'+
+      '<div class="row"><button type="button" class="btn" id="sy-copy">העתק קוד</button>'+(navigator.share?'<button type="button" class="btn" id="sy-share">שלח קישור</button>':'')+'<button type="button" class="btn" id="sy-now">סנכרן עכשיו</button></div>'+
+      '<p class="sy-note">שמור על הקוד כמו על מפתח: מי שיש לו אותו יכול לראות ולשנות את הלוח.</p>'+
+      (S.syncConfirm?'<div class="confirm"><span>לנתק את המכשיר הזה?</span><button type="button" class="btn danger" id="sy-off2">כן, לנתק</button><button type="button" class="btn" id="sy-offno">ביטול</button></div>':'<div><button type="button" class="btn ghost" id="sy-off">ניתוק המכשיר הזה</button></div>')+
+      '</details>';
+    return '<details class="backup sync" id="sync"'+(S.syncOpen||S.syncLink?' open':'')+'><summary>סנכרון בין מכשירים</summary>'+
+      '<p>מסמנים בטלפון, ורואים את זה גם בטאבלט או במחשב. בלי הרשמה ובלי סיסמה, רק קוד סנכרון אחד לכל המכשירים שלך.</p>'+
+      '<div class="row"><button type="button" class="btn primary" id="sy-start">הפעל סנכרון במכשיר הזה</button></div>'+
+      '<label class="f">כבר הפעלת במכשיר אחר? הדבק כאן את קוד הסנכרון<input type="text" id="sy-in" dir="ltr" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="LS-XXXXX-XXXXX-XXXXX-XXXXX" value="'+esc(S.syncLink?pretty(S.syncLink):'')+'"></label>'+
+      '<div class="row"><button type="button" class="btn" id="sy-join">חבר את המכשיר</button></div>'+
+      '<p class="sy-note">התכניות שכבר יש במכשיר לא יימחקו: הן יתמזגו עם מה שיש במכשיר השני.</p></details>';
+  }
+  function wire(){
+    const d=document.getElementById('sync'); if(!d) return;
+    d.ontoggle=()=>{ S.syncOpen=d.open; };
+    const on=(id,fn)=>{ const b=document.getElementById(id); if(b) b.onclick=fn; };
+    on('sy-start',start);
+    on('sy-join',()=>join(document.getElementById('sy-in').value));
+    on('sy-now',()=>{ now(); status(); });
+    on('sy-copy',async()=>{ try{ await navigator.clipboard.writeText(pretty(st.code)); flash('הקוד הועתק'); }catch(e){ flash('סמן את הקוד והעתק אותו ידנית'); } });
+    on('sy-share',()=>navigator.share({title:'סנכרון לוח לימוד',text:'קוד סנכרון ללוח הלימוד: '+pretty(st.code),url:link(st.code)}).catch(()=>{}));
+    on('sy-off',()=>{ S.syncConfirm=true; renderHome(); });
+    on('sy-offno',()=>{ S.syncConfirm=false; renderHome(); });
+    on('sy-off2',()=>{ S.syncConfirm=false; stop(); });
+  }
+  function boot(){
+    if(!ON) return;
+    const c=clean(location.hash); if(c&&location.hash.indexOf('sync=')>=0){ history.replaceState(null,'',location.pathname+location.search);
+      if(c!==st.code){ S.syncLink=c; S.syncOpen=true; setTimeout(()=>{ S.view='home'; render(); flash('נפתח קישור סנכרון. לחץ „חבר את המכשיר” כדי לחבר.'); },50); } }
+    if(st.code) now();
+    document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') now(); });
+    window.addEventListener('online',()=>now());
+    setInterval(()=>{ if(document.visibilityState==='visible') now(); },60000);
+  }
+  return {now,soon,tomb,card,wire,boot,merge,_clean:clean,get on(){return ON&&!!st.code}};
+})();
+
 /* ---------- Boot ---------- */
 function afterLoad(){
   if(S.view!=='loading'&&S.view!=='home') { if(S.view==='board') renderBoard(); return; }
@@ -900,6 +1059,7 @@ async function boot(){
   }
 }
 goLocal();
+Sync.boot();
 if('serviceWorker' in navigator){ const hadCtl=!!navigator.serviceWorker.controller; let reloaded=false; navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(hadCtl&&!reloaded&&S.view!=='pick'&&S.view!=='dates'){ reloaded=true; location.reload(); } }); window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(r=>{ document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') r.update().catch(()=>{}); }); }).catch(()=>{})); }
 })();
 </script>
