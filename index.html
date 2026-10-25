@@ -187,6 +187,9 @@ summary{cursor:pointer;color:var(--ink);font-weight:600}
 .sycode{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:1.05rem;letter-spacing:.06em;background:var(--bg);border:1px dashed var(--line);border-radius:8px;padding:10px 12px;text-align:center;overflow-wrap:anywhere;-webkit-user-select:all;user-select:all}
 .sy-note{font-size:.84rem}
 .sync input[type=text]{direction:ltr;text-align:left;font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.04em}
+.feedback{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.feedback h3{font-size:1.05rem}
+.feedback .sub{font-size:.9rem}
 @media (max-width:420px){.day{grid-template-columns:3.6rem 1fr}.track .what{font-size:1.08rem}}
 </style>
 </head>
@@ -425,7 +428,8 @@ function plansList(){
   if(S.legacy) l.push({id:'legacy',legacy:true,cfg:{name:'לוח לימוד תשפ״ז',start:S.legacy.days[0].d,end:S.legacy.days[S.legacy.days.length-1].d},checks:S.legacyChecks});
   return l;
 }
-const APP_VER='18';
+const APP_VER='19';
+const FEEDBACK='mailto:oricohen.dev@gmail.com?subject='+encodeURIComponent('משוב על לוח לימוד יומי חכם')+'&body='+encodeURIComponent('\n\n\n---\nגרסה '+APP_VER);
 const FIXED={}, FIXED_P={};
 function fixedData(src){
   if(FIXED[src]) return FIXED[src];
@@ -534,7 +538,7 @@ function renderHome(){
   const l=plansList();
   const hasLocal=l.some(p=>S.plans[p.id]&&S.plans[p.id].local);
   const note=(S.mode==='local'||hasLocal)?(Sync.on?'<p class="sub">התכניות והסימונים נשמרים בטלפון ומסונכרנים עם המכשירים שחיברת.</p>':'<p class="sub">התכניות והסימונים נשמרים בטלפון שלך. מומלץ לשמור מדי פעם קוד גיבוי.</p>'):'';
-  app.innerHTML='<header class="topbar"><div><h1>לוח לימוד יומי חכם</h1><p class="sub">בוחרים מה להספיק ועד מתי, ומקבלים לוח יומי מחושב.</p><p class="sub" style="font-size:.85rem"><a href="privacy.html" style="color:inherit">פרטיות</a></p></div></header>'+note+
+  app.innerHTML='<header class="topbar"><div><h1>לוח לימוד יומי חכם</h1><p class="sub">בוחרים מה להספיק ועד מתי, ומקבלים לוח יומי מחושב.</p><p class="sub" style="font-size:.85rem"><a href="privacy.html" style="color:inherit">פרטיות</a> · <a href="'+FEEDBACK+'" style="color:inherit">יצירת קשר</a></p></div></header>'+note+
     (l.length?'<section class="plans" aria-label="התכניות שלי"><h2>התכניות שלי</h2>'+l.map(p=>{
       const kinds=(p.legacy||p.cfg.fixed)?['torah','nach','mishnah']:trackList(p.cfg).map(t=>t.kind);
       const card='<button type="button" class="plan" data-open="'+esc(p.id)+'"><h3>'+esc(p.cfg.name)+'</h3><span class="pct">'+progressOf(p)+'%</span>'+
@@ -546,7 +550,8 @@ function renderHome(){
     }).join('')+'</section><div><button type="button" class="btn primary" id="new">+ תכנית חדשה</button></div>'
     :'<section class="empty"><h2>מה תרצה להספיק?</h2><p class="sub">תנ״ך, משניות, ש״ס בבלי, רמב״ם או שולחן ערוך. בוחרים, קובעים תאריך סיום, והלוח מחשב כמה ללמוד בכל יום.</p><button type="button" class="btn primary" id="new">להתחיל</button></section>')+
     Sync.card()+(true?'<details class="backup" id="backup"><summary>גיבוי והעברה למכשיר אחר</summary><p>הקוד שומר את כל התכניות והסימונים שלך. שמור אותו בהודעה לעצמך, והדבק אותו כאן במכשיר אחר כדי לשחזר.</p><div class="row"><button type="button" class="btn" id="bk-copy">העתק קוד גיבוי</button></div><label class="f">שחזור מקוד<textarea id="bk-in" placeholder="הדבק כאן קוד גיבוי"></textarea></label><div class="row"><button type="button" class="btn" id="bk-restore">שחזר</button></div></details>':'')+
-    '<p class="status" id="status">'+esc(S.msg)+'</p><p class="ver">גרסה '+APP_VER+'</p>';
+    '<section class="feedback"><div><h3>אהבת? חסר לך משהו?</h3><p class="sub">אשמח לשמוע מה עובד, מה לא ומה להוסיף.</p></div><a class="btn" href="'+FEEDBACK+'">כתוב לנו</a></section>'+
+    '<p class="status" id="status">'+esc(S.msg)+'</p><p class="ver">גרסה '+APP_VER+' · <a href="mailto:oricohen.dev@gmail.com" style="color:inherit">oricohen.dev@gmail.com</a></p>';
   if(l.length){ app.classList.add('has-tabbar'); const tb=ensureTabbar(); tb.querySelectorAll('button').forEach(x=>x.setAttribute('aria-current',String(x.dataset.tab==='plans'))); window.onscroll=null; }
   app.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openPlan(b.dataset.open));
   app.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>startEdit(b.dataset.edit));
