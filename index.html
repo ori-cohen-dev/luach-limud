@@ -190,6 +190,18 @@ summary{cursor:pointer;color:var(--ink);font-weight:600}
 .feedback{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .feedback h3{font-size:1.05rem}
 .feedback .sub{font-size:.9rem}
+.wrap.has-catch{padding-bottom:calc(158px + env(safe-area-inset-bottom,0px))}
+.catchbar{position:fixed;inset-inline:12px;bottom:calc(74px + env(safe-area-inset-bottom,0px));z-index:21;max-width:656px;margin:0 auto;display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--warn);border-radius:14px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.12);animation:rise .22s ease-out both}
+.catchbar button{font:inherit;color:var(--ink);background:none;border:0;border-radius:10px;cursor:pointer;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+.catchbar button:focus-visible{outline:3px solid var(--accent);outline-offset:-2px}
+.cb-nav{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:54px;min-height:48px;padding:2px 8px;color:var(--warn)!important;font-size:1.15rem;line-height:1.1}
+.cb-nav small{font-size:.72rem;font-weight:700}
+.cb-nav:disabled{color:var(--line)!important;cursor:default}
+.cb-nav:not(:disabled):active,.cb-mid:active{background:var(--s-tanakh)}
+.cb-mid{display:flex;flex-direction:column;align-items:center;min-width:0;padding:4px 6px;text-align:center}
+.cb-mid b{font-size:.98rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.cb-mid span{font-size:.8rem;color:var(--muted)}
+.cb-x{min-width:40px;min-height:44px;color:var(--muted)!important;font-size:1rem}
 @media (max-width:420px){.day{grid-template-columns:3.6rem 1fr}.track .what{font-size:1.08rem}}
 </style>
 </head>
@@ -420,7 +432,7 @@ function legacyPlan(p){
 
 /* ---------- State and storage ---------- */
 const S={view:'loading',db:null,user:null,uid:null,owner:false,mode:'none',
-  plans:{},legacy:null,legacyChecks:{},cur:null,built:null,week:1,lateLast:'',
+  plans:{},legacy:null,legacyChecks:{},cur:null,built:null,week:1,catch:null,
   draft:null,msg:'',confirmDel:false};
 const builtCache={};
 function plansList(){
@@ -428,7 +440,7 @@ function plansList(){
   if(S.legacy) l.push({id:'legacy',legacy:true,cfg:{name:'לוח לימוד תשפ״ז',start:S.legacy.days[0].d,end:S.legacy.days[S.legacy.days.length-1].d},checks:S.legacyChecks});
   return l;
 }
-const APP_VER='19';
+const APP_VER='20';
 const FEEDBACK='mailto:oricohen.dev@gmail.com?subject='+encodeURIComponent('משוב על לוח לימוד יומי חכם')+'&body='+encodeURIComponent('\n\n\n---\nגרסה '+APP_VER);
 const FIXED={}, FIXED_P={};
 function fixedData(src){
@@ -780,11 +792,22 @@ function remindCard(item,b){
     '</details>';
 }
 
-function openPlan(id){ if(id!=='legacy'&&!getBuilt(id)){ S.pendingOpen=id; flash('טוען את הלוח…'); return; } S.cur=id; S.view='board'; S.confirmDel=false; S.lateLast=''; ls.set('lu-last',id); const b=getBuilt(id); const i=todayIndex(b); S.week=b.days[i].w; render(); window.scrollTo(0,0); }
+function openPlan(id){ if(id!=='legacy'&&!getBuilt(id)){ S.pendingOpen=id; flash('טוען את הלוח…'); return; } S.cur=id; S.view='board'; S.confirmDel=false; S.catch=null; ls.set('lu-last',id); const b=getBuilt(id); const i=todayIndex(b); S.week=b.days[i].w; render(); window.scrollTo(0,0); }
 function todayIndex(b){
   let i=b.days.findIndex(d=>d.d>=todayISO);
   if(i<0) i=b.days.length-1;
   return i;
+}
+function catchBar(b,id){
+  if(!S.catch) return '';
+  const ms=missedList(b,id), cur=b.days.find(x=>x.d===S.catch); if(!cur){ S.catch=null; return ''; }
+  const prev=ms.filter(m=>m.d<S.catch).pop(), next=ms.find(m=>m.d>S.catch), pending=ms.some(m=>m.d===S.catch);
+  const left=ms.length?'נשארו '+(ms.length===1?'יום אחד':ms.length+' ימים')+' להשלים':'הכול הושלם 🎉';
+  return '<div class="catchbar" role="region" aria-label="ניווט בין ימים שלא נלמדו">'+
+    '<button type="button" class="cb-nav" id="cb-prev"'+(prev?'':' disabled')+' aria-label="יום קודם שלא נלמד"><span aria-hidden="true">→</span><small>קודם</small></button>'+
+    '<button type="button" class="cb-mid" id="cb-here"><b>'+(pending?'':'✓ ')+'יום '+esc(cur.dow)+' · '+esc(cur.h)+'</b><span>'+esc(left)+'</span></button>'+
+    '<button type="button" class="cb-nav" id="cb-next"'+(next?'':' disabled')+' aria-label="היום הבא שלא נלמד"><span aria-hidden="true">←</span><small>הבא</small></button>'+
+    '<button type="button" class="cb-x" id="cb-x" aria-label="סגירת הניווט">✕</button></div>';
 }
 function missedList(b,id){ return b.days.filter(d=>d.d<todayISO&&b.tracks.some(t=>!d.items[t.key].rest&&!isDone(id,d.d,t.key))); }
 function ensureTabbar(){
@@ -832,25 +855,34 @@ function renderBoard(full){
   const y=window.scrollY;
   app.innerHTML='<header class="topbar"><div><h1>'+esc(item.cfg.name)+'</h1><p class="sub">'+esc(hdate(parse(item.cfg.start),true))+' – '+esc(hdate(parse(item.cfg.end),true))+'</p></div><div class="row">'+(item.legacy||item.cfg.fixed?'':'<button type="button" class="btn ghost" id="edit-top">עריכה</button>')+'<button type="button" class="btn" id="home">התכניות שלי</button></div></header>'+
     (!canWrite?'<p class="notice">כדי לסמן וי צריך להיות מחובר.</p>':'')+
-    todayHtml+remindCard(item,b)+stats+week+notes+del;
+    todayHtml+remindCard(item,b)+stats+week+notes+del+catchBar(b,id);
+  app.classList.toggle('has-catch',!!S.catch);
   if(!full) window.scrollTo(0,y);
   app.classList.add('has-tabbar');
   const tb=ensureTabbar();
   const setCur=()=>{ const w=document.getElementById('sec-week'); const inWeek=w&&w.getBoundingClientRect().top<window.innerHeight*0.45;
     tb.querySelectorAll('button').forEach(x=>x.setAttribute('aria-current',String((x.dataset.tab==='week')===!!inWeek&&x.dataset.tab!=='plans'))); };
   setCur(); window.onscroll=()=>{ if(S.view==='board') setCur(); };
-  document.getElementById('home').onclick=()=>{S.view='home';render();window.scrollTo(0,0)};
+  document.getElementById('home').onclick=()=>{S.catch=null;S.view='home';render();window.scrollTo(0,0)};
   document.getElementById('prev').onclick=()=>{S.week--;renderBoard()};
   document.getElementById('nextw').onclick=()=>{S.week++;renderBoard()};
   document.getElementById('go-today').onclick=()=>{S.week=b.days[todayIndex(b)].w;renderBoard()};
+  const goDay=x=>{ if(!x) return; S.catch=x.d; S.week=x.w; renderBoard();
+    const li=document.getElementById('day-'+x.d);
+    if(li){li.scrollIntoView({behavior:'smooth',block:'center'});li.classList.add('flash');setTimeout(()=>li.classList.remove('flash'),1700);} };
   document.getElementById('late-btn').onclick=()=>{
     const ms=missedList(b,id);
     if(!ms.length){flash('אין ימים שעברו ולא סומנו 🎉');return}
-    const x=ms.find(m=>m.d>S.lateLast)||ms[0]; S.lateLast=x.d; S.week=x.w; renderBoard();
-    const li=document.getElementById('day-'+x.d);
-    if(li){li.scrollIntoView({behavior:'smooth',block:'center'});li.classList.add('flash');setTimeout(()=>li.classList.remove('flash'),1700);}
-    flash('יום '+x.dow+' '+x.h+' ('+(ms.indexOf(x)+1)+' מתוך '+ms.length+') · לחץ שוב לבא');
+    goDay(ms[ms.length-1]);
   };
+  if(S.catch){
+    const ms=missedList(b,id), byD=dd=>b.days.find(x=>x.d===dd);
+    const on=(k,fn)=>{const e=document.getElementById(k); if(e) e.onclick=fn;};
+    on('cb-prev',()=>goDay(ms.filter(m=>m.d<S.catch).pop()));
+    on('cb-next',()=>goDay(ms.find(m=>m.d>S.catch)));
+    on('cb-here',()=>goDay(byD(S.catch)));
+    on('cb-x',()=>{S.catch=null;renderBoard();});
+  }
   const rm=document.getElementById('remind'); if(rm) rm.ontoggle=()=>{S.remindOpen=rm.open};
   const rt=document.getElementById('rm-time'); if(rt) rt.onchange=()=>{ if(rt.value){ ls.set('lu-remind-time',rt.value); document.getElementById('rm-gcal').href=gcalUrl(item,b); } };
   const ri=document.getElementById('rm-ics'); if(ri) ri.onclick=()=>{
