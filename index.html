@@ -158,6 +158,23 @@ button.stat span::after{content:" ←"}
 @keyframes flash{0%,40%{background:var(--s-tanakh);box-shadow:0 0 0 2px var(--warn) inset}100%{box-shadow:0 0 0 2px transparent inset}}
 @media (prefers-reduced-motion:reduce){.day.flash{animation:none;background:var(--s-tanakh)}}
 details{color:var(--muted);font-size:.9rem}
+.catchup{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px;color:var(--ink);font-size:.95rem}
+.catchup[open]{display:flex;flex-direction:column;gap:14px}
+.catchup summary{display:flex;align-items:center;gap:8px}
+.catchup summary .cnt{margin-inline-start:auto;font-size:.82rem;font-weight:700;color:var(--warn)}
+.catchup summary svg{width:20px;height:20px;stroke:var(--warn);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.cu-group{display:flex;flex-direction:column;gap:6px;border-inline-start:3px solid var(--tc);padding-inline-start:12px}
+.cu-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.cu-head b{color:var(--tc);font-size:.92rem}
+.cu-head .btn{font-size:.82rem;min-height:32px;padding:4px 10px}
+.cu-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.cu-list li{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)}
+.cu-list li:last-child{border-bottom:0}
+.cu-list .t{min-width:0;overflow-wrap:anywhere}
+.cu-list .when{display:block;font-size:.78rem;color:var(--muted)}
+.cu-list .chk{width:30px;height:30px}
+.cu-list .chk:checked::after{width:7px;height:13px;border-width:0 2.5px 2.5px 0}
+.cu-more{font-size:.85rem;color:var(--muted)}
 .remind{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px;color:var(--ink);font-size:.95rem}
 .remind[open]{display:flex;flex-direction:column;gap:12px}
 .remind summary{display:flex;align-items:center;gap:8px}
@@ -440,7 +457,7 @@ function plansList(){
   if(S.legacy) l.push({id:'legacy',legacy:true,cfg:{name:'לוח לימוד תשפ״ז',start:S.legacy.days[0].d,end:S.legacy.days[S.legacy.days.length-1].d},checks:S.legacyChecks});
   return l;
 }
-const APP_VER='20';
+const APP_VER='21';
 const FEEDBACK='mailto:oricohen.dev@gmail.com?subject='+encodeURIComponent('משוב על לוח לימוד יומי חכם')+'&body='+encodeURIComponent('\n\n\n---\nגרסה '+APP_VER);
 const FIXED={}, FIXED_P={};
 function fixedData(src){
@@ -792,7 +809,7 @@ function remindCard(item,b){
     '</details>';
 }
 
-function openPlan(id){ if(id!=='legacy'&&!getBuilt(id)){ S.pendingOpen=id; flash('טוען את הלוח…'); return; } S.cur=id; S.view='board'; S.confirmDel=false; S.catch=null; ls.set('lu-last',id); const b=getBuilt(id); const i=todayIndex(b); S.week=b.days[i].w; render(); window.scrollTo(0,0); }
+function openPlan(id){ if(id!=='legacy'&&!getBuilt(id)){ S.pendingOpen=id; flash('טוען את הלוח…'); return; } S.cur=id; S.view='board'; S.confirmDel=false; S.catch=null; S.cuAll=null; S.cuConfirm=null; ls.set('lu-last',id); const b=getBuilt(id); const i=todayIndex(b); S.week=b.days[i].w; render(); window.scrollTo(0,0); }
 function todayIndex(b){
   let i=b.days.findIndex(d=>d.d>=todayISO);
   if(i<0) i=b.days.length-1;
@@ -808,6 +825,35 @@ function catchBar(b,id){
     '<button type="button" class="cb-mid" id="cb-here"><b>'+(pending?'':'✓ ')+'יום '+esc(cur.dow)+' · '+esc(cur.h)+'</b><span>'+esc(left)+'</span></button>'+
     '<button type="button" class="cb-nav" id="cb-next"'+(next?'':' disabled')+' aria-label="היום הבא שלא נלמד"><span aria-hidden="true">←</span><small>הבא</small></button>'+
     '<button type="button" class="cb-x" id="cb-x" aria-label="סגירת הניווט">✕</button></div>';
+}
+function catchupCard(b,id,canWrite,lk){
+  const groups=b.tracks.map(t=>({t,items:b.days.filter(x=>x.d<todayISO&&!x.items[t.key].rest&&!isDone(id,x.d,t.key))})).filter(g=>g.items.length);
+  const total=groups.reduce((a,g)=>a+g.items.length,0);
+  if(!total) return '';
+  const LIM=60, all=S.cuAll||{};
+  const body=groups.map(g=>{
+    const show=all[g.t.key]?g.items:g.items.slice(0,LIM);
+    const conf=S.cuConfirm===g.t.key;
+    return '<div class="cu-group" style="'+tv(g.t.kind)+'"><div class="cu-head"><b>'+esc(g.t.label)+' · '+(g.items.length===1?'יום אחד':g.items.length+' ימים')+'</b>'+
+      (canWrite?(conf?'<span class="row"><button type="button" class="btn danger" data-cu-yes="'+g.t.key+'">לסמן את כולם?</button><button type="button" class="btn" data-cu-no="1">ביטול</button></span>'
+        :'<button type="button" class="btn ghost" data-cu-all="'+g.t.key+'">סמנתי את כולם</button>'):'')+'</div>'+
+      '<ul class="cu-list">'+show.map(x=>{const it=x.items[g.t.key];
+        return '<li><span class="t">'+esc(it.text)+lk(it)+'<span class="when">יום '+esc(x.dow)+' · '+esc(x.h)+'</span></span>'+
+          '<input type="checkbox" class="chk" data-date="'+x.d+'" data-k="'+g.t.key+'" aria-label="'+esc(g.t.label)+' '+esc(it.text)+'"'+(canWrite?'':' disabled')+'></li>'}).join('')+'</ul>'+
+      (g.items.length>show.length?'<button type="button" class="btn ghost cu-more" data-cu-more="'+g.t.key+'">הצג את כל '+g.items.length+'</button>':'')+'</div>';
+  }).join('');
+  return '<details class="catchup" id="catchup"'+(S.cuOpen?' open':'')+'><summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg>מה נשאר להשלים<span class="cnt">'+total+'</span></summary>'+
+    '<p class="sub" style="font-size:.88rem">כל מה שעבר ועוד לא סומן, לפי סוג הלימוד. סמן וי ליד מה שהשלמת.</p>'+body+'</details>';
+}
+async function markAll(id,key,dates){
+  if(!dates.length) return;
+  if(id!=='legacy'&&S.plans[id]&&S.plans[id].local){
+    const p=S.plans[id]; p.checks=p.checks||{}; p.ct=p.ct||{}; const now=Date.now();
+    for(const d of dates){ p.checks[d]=Object.assign({},p.checks[d]||{},{[key]:true}); p.ct[d+'|'+key]=now; }
+    saveLocal(); renderBoard(); flash('סומנו '+dates.length+' ימים'); return;
+  }
+  for(const d of dates) await setCheck(id,d,key,true);
+  flash('סומנו '+dates.length+' ימים');
 }
 function missedList(b,id){ return b.days.filter(d=>d.d<todayISO&&b.tracks.some(t=>!d.items[t.key].rest&&!isDone(id,d.d,t.key))); }
 function ensureTabbar(){
@@ -855,7 +901,7 @@ function renderBoard(full){
   const y=window.scrollY;
   app.innerHTML='<header class="topbar"><div><h1>'+esc(item.cfg.name)+'</h1><p class="sub">'+esc(hdate(parse(item.cfg.start),true))+' – '+esc(hdate(parse(item.cfg.end),true))+'</p></div><div class="row">'+(item.legacy||item.cfg.fixed?'':'<button type="button" class="btn ghost" id="edit-top">עריכה</button>')+'<button type="button" class="btn" id="home">התכניות שלי</button></div></header>'+
     (!canWrite?'<p class="notice">כדי לסמן וי צריך להיות מחובר.</p>':'')+
-    todayHtml+remindCard(item,b)+stats+week+notes+del+catchBar(b,id);
+    todayHtml+remindCard(item,b)+stats+catchupCard(b,id,canWrite,lk)+week+notes+del+catchBar(b,id);
   app.classList.toggle('has-catch',!!S.catch);
   if(!full) window.scrollTo(0,y);
   app.classList.add('has-tabbar');
@@ -883,6 +929,12 @@ function renderBoard(full){
     on('cb-here',()=>goDay(byD(S.catch)));
     on('cb-x',()=>{S.catch=null;renderBoard();});
   }
+  const cu=document.getElementById('catchup'); if(cu){ cu.ontoggle=()=>{S.cuOpen=cu.open};
+    cu.querySelectorAll('[data-cu-all]').forEach(x=>x.onclick=()=>{S.cuConfirm=x.dataset.cuAll;renderBoard()});
+    cu.querySelectorAll('[data-cu-no]').forEach(x=>x.onclick=()=>{S.cuConfirm=null;renderBoard()});
+    cu.querySelectorAll('[data-cu-more]').forEach(x=>x.onclick=()=>{S.cuAll=Object.assign({},S.cuAll,{[x.dataset.cuMore]:true});renderBoard()});
+    cu.querySelectorAll('[data-cu-yes]').forEach(x=>x.onclick=()=>{const k=x.dataset.cuYes; S.cuConfirm=null;
+      markAll(id,k,b.days.filter(d=>d.d<todayISO&&!d.items[k].rest&&!isDone(id,d.d,k)).map(d=>d.d));}); }
   const rm=document.getElementById('remind'); if(rm) rm.ontoggle=()=>{S.remindOpen=rm.open};
   const rt=document.getElementById('rm-time'); if(rt) rt.onchange=()=>{ if(rt.value){ ls.set('lu-remind-time',rt.value); document.getElementById('rm-gcal').href=gcalUrl(item,b); } };
   const ri=document.getElementById('rm-ics'); if(ri) ri.onclick=()=>{
