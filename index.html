@@ -457,7 +457,7 @@ function plansList(){
   if(S.legacy) l.push({id:'legacy',legacy:true,cfg:{name:'לוח לימוד תשפ״ז',start:S.legacy.days[0].d,end:S.legacy.days[S.legacy.days.length-1].d},checks:S.legacyChecks});
   return l;
 }
-const APP_VER='21';
+const APP_VER='22';
 const FEEDBACK='mailto:oricohen.dev@gmail.com?subject='+encodeURIComponent('משוב על לוח לימוד יומי חכם')+'&body='+encodeURIComponent('\n\n\n---\nגרסה '+APP_VER);
 const FIXED={}, FIXED_P={};
 function fixedData(src){
@@ -826,21 +826,46 @@ function catchBar(b,id){
     '<button type="button" class="cb-nav" id="cb-next"'+(next?'':' disabled')+' aria-label="היום הבא שלא נלמד"><span aria-hidden="true">←</span><small>הבא</small></button>'+
     '<button type="button" class="cb-x" id="cb-x" aria-label="סגירת הניווט">✕</button></div>';
 }
+function cuMergeable(t){ return !!t&&!/[|·]|פרשת|חזרה/.test(t); }
+function cuSplit(t){ const m=t.match(/\s[-–]\s|–/); return m?[t.slice(0,m.index).trim(),t.slice(m.index+m[0].length).trim()]:[t.trim(),null]; }
+function cuJoin(a,z){
+  const s=cuSplit(a)[0], zz=cuSplit(z), bz=zz[0].replace(/\s+\S+$/,'');
+  const e=zz[1]?(/\s/.test(zz[1])||!bz||bz===zz[0]?zz[1]:bz+' '+zz[1]):zz[0];
+  const book=s.replace(/\s+\S+$/,'');
+  if(book&&book!==s&&e.startsWith(book+' ')) return s+' - '+e.slice(book.length+1);
+  return s+' - '+e;
+}
+const cuBook=x=>x.replace(/\s+\S+$/,'');
+function cuBookStart(t){ return cuBook(cuSplit(t)[0]); }
+function cuBookEnd(t){ const p=cuSplit(t); return p[1]&&/\s/.test(p[1])?cuBook(p[1]):cuBook(p[0]); }
+function cuRuns(b,id,t){
+  const seq=b.days.filter(x=>x.d<todayISO&&!x.items[t.key].rest), runs=[];
+  seq.forEach((x,i)=>{ if(isDone(id,x.d,t.key)) return;
+    const l=runs[runs.length-1], it=x.items[t.key];
+    const pt=l&&l.days[l.days.length-1].items[t.key].text;
+    if(l&&l.last===i-1&&cuMergeable(it.text)&&cuMergeable(pt)&&cuBookStart(it.text)===cuBookEnd(pt)){ l.days.push(x); l.last=i; }
+    else runs.push({days:[x],last:i}); });
+  return runs.map(r=>{ const f=r.days[0].items[t.key], z=r.days[r.days.length-1].items[t.key];
+    return {days:r.days, text:r.days.length>1?cuJoin(f.text,z.text):f.text, first:f}; });
+}
 function catchupCard(b,id,canWrite,lk){
-  const groups=b.tracks.map(t=>({t,items:b.days.filter(x=>x.d<todayISO&&!x.items[t.key].rest&&!isDone(id,x.d,t.key))})).filter(g=>g.items.length);
+  const groups=b.tracks.map(t=>{const runs=cuRuns(b,id,t); return {t,runs,items:runs.flatMap(r=>r.days)};}).filter(g=>g.items.length);
   const total=groups.reduce((a,g)=>a+g.items.length,0);
   if(!total) return '';
   const LIM=60, all=S.cuAll||{};
   const body=groups.map(g=>{
-    const show=all[g.t.key]?g.items:g.items.slice(0,LIM);
+    const show=all[g.t.key]?g.runs:g.runs.slice(0,LIM);
     const conf=S.cuConfirm===g.t.key;
     return '<div class="cu-group" style="'+tv(g.t.kind)+'"><div class="cu-head"><b>'+esc(g.t.label)+' · '+(g.items.length===1?'יום אחד':g.items.length+' ימים')+'</b>'+
       (canWrite?(conf?'<span class="row"><button type="button" class="btn danger" data-cu-yes="'+g.t.key+'">לסמן את כולם?</button><button type="button" class="btn" data-cu-no="1">ביטול</button></span>'
         :'<button type="button" class="btn ghost" data-cu-all="'+g.t.key+'">סמנתי את כולם</button>'):'')+'</div>'+
-      '<ul class="cu-list">'+show.map(x=>{const it=x.items[g.t.key];
-        return '<li><span class="t">'+esc(it.text)+lk(it)+'<span class="when">יום '+esc(x.dow)+' · '+esc(x.h)+'</span></span>'+
-          '<input type="checkbox" class="chk" data-date="'+x.d+'" data-k="'+g.t.key+'" aria-label="'+esc(g.t.label)+' '+esc(it.text)+'"'+(canWrite?'':' disabled')+'></li>'}).join('')+'</ul>'+
-      (g.items.length>show.length?'<button type="button" class="btn ghost cu-more" data-cu-more="'+g.t.key+'">הצג את כל '+g.items.length+'</button>':'')+'</div>';
+      '<ul class="cu-list">'+show.map(r=>{const x=r.days[0], z=r.days[r.days.length-1], n=r.days.length;
+        const when=n===1?'יום '+esc(x.dow)+' · '+esc(x.h):n+' ימים · '+esc(x.h)+' – '+esc(z.h);
+        return '<li><span class="t">'+esc(r.text)+lk(r.first)+'<span class="when">'+when+'</span></span>'+
+          (n===1?'<input type="checkbox" class="chk" data-date="'+x.d+'" data-k="'+g.t.key+'"'
+            :'<input type="checkbox" class="chk" data-dates="'+r.days.map(d=>d.d).join(',')+'" data-gk="'+g.t.key+'"')+
+          ' aria-label="'+esc(g.t.label)+' '+esc(r.text)+'"'+(canWrite?'':' disabled')+'></li>'}).join('')+'</ul>'+
+      (g.runs.length>show.length?'<button type="button" class="btn ghost cu-more" data-cu-more="'+g.t.key+'">הצג את הכול ('+g.runs.length+' שורות)</button>':'')+'</div>';
   }).join('');
   return '<details class="catchup" id="catchup"'+(S.cuOpen?' open':'')+'><summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg>מה נשאר להשלים<span class="cnt">'+total+'</span></summary>'+
     '<p class="sub" style="font-size:.88rem">כל מה שעבר ועוד לא סומן, לפי סוג הלימוד. סמן וי ליד מה שהשלמת.</p>'+body+'</details>';
@@ -950,6 +975,9 @@ function renderBoard(full){
   const dn2=document.getElementById('del-no'); if(dn2) dn2.onclick=()=>{S.confirmDel=false;renderBoard()};
   const dy=document.getElementById('del-yes'); if(dy) dy.onclick=()=>deletePlan(id).then(()=>flash('התכנית נמחקה'));
 }
+app.addEventListener('change',e=>{
+  const g=e.target; if(g.dataset&&g.dataset.dates&&g.dataset.gk&&S.view==='board'&&g.checked){ try{ navigator.vibrate&&navigator.vibrate(12); }catch(_){} markAll(S.cur,g.dataset.gk,g.dataset.dates.split(',')); }
+});
 app.addEventListener('change',e=>{
   const el=e.target; if(!el.classList||!el.classList.contains('chk')||!el.dataset.date||S.view!=='board') return;
   if(el.checked){ try{ navigator.vibrate&&navigator.vibrate(12); }catch(_){} }
