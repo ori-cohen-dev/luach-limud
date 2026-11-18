@@ -459,7 +459,7 @@ function plansList(){
   if(S.legacy) l.push({id:'legacy',legacy:true,cfg:{name:'לוח לימוד תשפ״ז',start:S.legacy.days[0].d,end:S.legacy.days[S.legacy.days.length-1].d},checks:S.legacyChecks});
   return l;
 }
-const APP_VER='23';
+const APP_VER='24';
 const FEEDBACK='mailto:oricohen.dev@gmail.com?subject='+encodeURIComponent('משוב על לוח לימוד יומי חכם')+'&body='+encodeURIComponent('\n\n\n---\nגרסה '+APP_VER);
 const FIXED={}, FIXED_P={};
 function fixedData(src){
@@ -845,12 +845,15 @@ function cuBookStart(t){ return cuBook(cuSplit(t)[0]); }
 function cuBookEnd(t){ const p=cuSplit(t), e=p[1]&&/\s/.test(p[1])?cuBook(p[1]):''; return e&&e!==p[1]?e:cuBook(p[0]); }
 function prevNote(b,id,day,t){
   const it=day.items[t.key]; if(!it||it.rest||it.review||!cuMergeable(it.text)||isDone(id,day.d,t.key)) return null;
-  const bk=cuBookStart(it.text); if(!bk) return null;
-  const i=b.days.indexOf(day);
-  for(let j=i-1;j>=0;j--){ const x=b.days[j], pi=x.items[t.key]; if(!pi||pi.rest||pi.review||!cuMergeable(pi.text)) continue;
+  let bk=cuBookStart(it.text); if(!bk) return null;
+  const chain=[];
+  for(let j=b.days.indexOf(day)-1;j>=0;j--){ const x=b.days[j], pi=x.items[t.key]; if(!pi||pi.rest||pi.review||!cuMergeable(pi.text)) continue;
     if(cuBookEnd(pi.text)!==bk) continue;
-    return isDone(id,x.d,t.key)||x.d>=todayISO?null:{d:x.d,dow:x.dow,h:x.h,text:pi.text,book:bk}; }
-  return null;
+    if(isDone(id,x.d,t.key)||x.d>=todayISO) break;
+    chain.unshift({d:x.d,text:pi.text}); bk=cuBookStart(pi.text); }
+  if(!chain.length) return null;
+  const txt=chain.length>1?cuJoin(chain[0].text,chain[chain.length-1].text):chain[0].text, pr=cuSplit(txt);
+  return {d:chain[0].d,label:pr[1]?'מ'+pr[0]+' עד '+pr[1]:pr[0]};
 }
 function cuRuns(b,id,t){
   const seq=b.days.filter(x=>x.d<todayISO&&!x.items[t.key].rest&&!x.items[t.key].review), runs=[];
@@ -920,7 +923,7 @@ function renderBoard(full){
   const lk=it=>(it.links||[]).map(l=>' <a class="lk" href="'+esc(l.url)+'" target="_blank" rel="noopener" title="'+esc(l.label)+' בספריא" aria-label="פתח '+esc(l.label)+' בספריא">↗</a>').join('');
   const box=(date,t,big,it)=>{ const au=!isDone(id,date,t.key)&&autoDone(it,date);
     return '<input type="checkbox" class="chk'+(au?' auto':'')+'" data-date="'+date+'" data-k="'+t.key+'" aria-label="'+esc(t.label)+' '+date+(au?' (חזרה, סומן אוטומטית)':'')+'"'+(au?' title="יום חזרה – סומן אוטומטית"':'')+(isDone(id,date,t.key)||au?' checked':'')+(canWrite?'':' disabled')+'>'; };
-  const prevN=(x,t)=>{ const n=prevNote(b,id,x,t); return n?'<button type="button" class="prevnote" data-goto="'+n.d+'">⚠ הקודם ב'+esc(n.book)+' עוד לא סומן: '+esc(n.text)+' · יום '+esc(n.dow)+' '+esc(n.h)+'</button>':''; };
+  const prevN=(x,t)=>{ const n=prevNote(b,id,x,t); return n?'<button type="button" class="prevnote" data-goto="'+n.d+'">⚠ נדרש להשלים '+esc(n.label)+'</button>':''; };
   const todayHtml='<section class="today" id="sec-today" aria-live="polite"><div class="today-head"><h2>'+headLabel+'יום '+esc(d.dow)+', '+esc(d.h)+'</h2><span class="daynum">יום '+d.n+' מתוך '+b.days.length+' · שבוע '+d.w+'</span></div>'+
     b.tracks.map(t=>{const it=d.items[t.key];return '<div class="track'+(it.rest?' rest':'')+'" style="'+tv(t.kind)+'"><div><div class="lbl">'+esc(t.label)+'</div><div class="what">'+esc(it.text)+'</div>'+(it.meta?'<div class="meta">'+esc(it.meta)+'</div>':'')+links(it,t)+prevN(d,t)+'</div>'+(it.rest?'':box(d.d,t,true,it))+'</div>'}).join('')+
     '<div class="status" id="status">'+esc(S.msg)+'</div></section>';
