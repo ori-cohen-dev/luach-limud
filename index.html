@@ -158,6 +158,8 @@ button.stat span::after{content:" ←"}
 @keyframes flash{0%,40%{background:var(--s-tanakh);box-shadow:0 0 0 2px var(--warn) inset}100%{box-shadow:0 0 0 2px transparent inset}}
 @media (prefers-reduced-motion:reduce){.day.flash{animation:none;background:var(--s-tanakh)}}
 details{color:var(--muted);font-size:.9rem}
+.prevnote{display:block;margin-top:4px;font:inherit;font-size:.8rem;line-height:1.35;color:var(--warn);background:none;border:0;padding:0;text-align:start;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+.chk.auto{opacity:.6}
 .catchup{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px;color:var(--ink);font-size:.95rem}
 .catchup[open]{display:flex;flex-direction:column;gap:14px}
 .catchup summary{display:flex;align-items:center;gap:8px}
@@ -401,7 +403,7 @@ function parashaItem(dt,dows){
   const [name,book,A]=r.p, a=A[from], z=A[to];
   const lab=from===to?ALN[from]:ALN[from]+' עד '+ALN[to];
   const bk=T.TANAKH[book], ref=bk[1]+'.'+a[0]+'.'+a[1]+'-'+(a[0]===z[2]?z[3]:z[2]+'.'+z[3]);
-  return {text:(r.review?'חזרה: ':'')+'פרשת '+name+' · '+lab,
+  return {review:r.review,text:(r.review?'חזרה: ':'')+'פרשת '+name+' · '+lab,
     meta:bk[0]+' '+gem(a[0])+','+gem(a[1])+' – '+gem(z[2])+','+gem(z[3])+(r.review?' · שבוע בלי פרשה, חוזרים על הקודמת':''),
     links:[{label:'פרשת '+name,url:sef(ref)}]};
 }
@@ -440,9 +442,9 @@ function legacyPlan(p){
   return {
     tracks:[{key:'t',kind:'torah',label:'תורה'},{key:'n',kind:'nach',label:'נ״ך'},{key:'m',kind:'mishnah',label:'משניות'}],
     days:p.days.map(d=>({d:d.d,h:d.h,dow:d.dow,n:d.n,w:d.w,items:{
-      t:{text:d.torah,meta:'',links:(d.tl||[]).map(l=>({label:l.label,url:sef(l.ref)}))},
+      t:{text:d.torah,meta:'',review:/חזרה/.test(d.torah||''),links:(d.tl||[]).map(l=>({label:l.label,url:sef(l.ref)}))},
       n:{text:d.nach,meta:d.nachType,links:(d.nl||[]).map(l=>({label:l.label,url:sef(l.ref)}))},
-      m:{text:d.m,meta:(d.seder==='חזרה'?'חזרה שבועית':'סדר '+d.seder)+' · '+d.cnt+' משניות',links:legacyLinks(d.m)}}})),
+      m:{text:d.m,review:d.seder==='חזרה',meta:(d.seder==='חזרה'?'חזרה שבועית':'סדר '+d.seder)+' · '+d.cnt+' משניות',links:legacyLinks(d.m)}}})),
     notes:p.notes||[]
   };
 }
@@ -457,7 +459,7 @@ function plansList(){
   if(S.legacy) l.push({id:'legacy',legacy:true,cfg:{name:'לוח לימוד תשפ״ז',start:S.legacy.days[0].d,end:S.legacy.days[S.legacy.days.length-1].d},checks:S.legacyChecks});
   return l;
 }
-const APP_VER='22';
+const APP_VER='23';
 const FEEDBACK='mailto:oricohen.dev@gmail.com?subject='+encodeURIComponent('משוב על לוח לימוד יומי חכם')+'&body='+encodeURIComponent('\n\n\n---\nגרסה '+APP_VER);
 const FIXED={}, FIXED_P={};
 function fixedData(src){
@@ -482,6 +484,9 @@ function getBuilt(id){
 }
 const normL=c=>{c=c||{};return {m:!!c.m,t:!!c.t,n:c.n===undefined?!!c.t:!!c.n}};
 function checksFor(id){ return id==='legacy'?S.legacyChecks:((S.plans[id]&&S.plans[id].checks)||{}); }
+const AUTO_ISO=iso(addDays(new Date(),-2));
+const autoDone=(it,date)=>!!(it&&it.review&&date<=AUTO_ISO);
+function doneX(id,day,key){ return isDone(id,day.d,key)||autoDone(day.items[key],day.d); }
 function isDone(id,date,key){ const c=checksFor(id)[date]; if(id==='legacy') return normL(c)[key]; return !!(c&&c[key]); }
 function localPlans(){ let o={}; try{o=JSON.parse(ls.get('lu-plans')||'{}')||{}}catch(e){} for(const k in o) o[k].local=true; return o; }
 function saveLocal(fromSync){ const o={}; for(const [k,v] of Object.entries(S.plans)) if(v.local) o[k]={cfg:v.cfg,checks:v.checks||{},ct:v.ct||{}}; ls.set('lu-plans',JSON.stringify(o)); if(!fromSync) Sync.soon(); }
@@ -560,7 +565,7 @@ function render(){
 function progressOf(item){
   const b=getBuilt(item.id); if(!b) return 0;
   let tot=0,done=0;
-  for(const d of b.days) for(const t of b.tracks){ if(d.items[t.key].rest) continue; tot++; if(isDone(item.id,d.d,t.key)) done++; }
+  for(const d of b.days) for(const t of b.tracks){ if(d.items[t.key].rest) continue; tot++; if(doneX(item.id,d,t.key)) done++; }
   return tot?Math.round(done/tot*100):0;
 }
 function renderHome(){
@@ -835,11 +840,20 @@ function cuJoin(a,z){
   if(book&&book!==s&&e.startsWith(book+' ')) return s+' - '+e.slice(book.length+1);
   return s+' - '+e;
 }
-const cuBook=x=>x.replace(/\s+\S+$/,'');
+const cuBook=x=>x.replace(/\s+ע״[אב]$/,'').replace(/\s+\S+$/,'').replace(/\s+(פרק|פרקים|סימן|סימנים)$/,'').replace(/^הלכות\s+/,'');
 function cuBookStart(t){ return cuBook(cuSplit(t)[0]); }
-function cuBookEnd(t){ const p=cuSplit(t); return p[1]&&/\s/.test(p[1])?cuBook(p[1]):cuBook(p[0]); }
+function cuBookEnd(t){ const p=cuSplit(t), e=p[1]&&/\s/.test(p[1])?cuBook(p[1]):''; return e&&e!==p[1]?e:cuBook(p[0]); }
+function prevNote(b,id,day,t){
+  const it=day.items[t.key]; if(!it||it.rest||it.review||!cuMergeable(it.text)||isDone(id,day.d,t.key)) return null;
+  const bk=cuBookStart(it.text); if(!bk) return null;
+  const i=b.days.indexOf(day);
+  for(let j=i-1;j>=0;j--){ const x=b.days[j], pi=x.items[t.key]; if(!pi||pi.rest||pi.review||!cuMergeable(pi.text)) continue;
+    if(cuBookEnd(pi.text)!==bk) continue;
+    return isDone(id,x.d,t.key)||x.d>=todayISO?null:{d:x.d,dow:x.dow,h:x.h,text:pi.text,book:bk}; }
+  return null;
+}
 function cuRuns(b,id,t){
-  const seq=b.days.filter(x=>x.d<todayISO&&!x.items[t.key].rest), runs=[];
+  const seq=b.days.filter(x=>x.d<todayISO&&!x.items[t.key].rest&&!x.items[t.key].review), runs=[];
   seq.forEach((x,i)=>{ if(isDone(id,x.d,t.key)) return;
     const l=runs[runs.length-1], it=x.items[t.key];
     const pt=l&&l.days[l.days.length-1].items[t.key].text;
@@ -880,7 +894,7 @@ async function markAll(id,key,dates){
   for(const d of dates) await setCheck(id,d,key,true);
   flash('סומנו '+dates.length+' ימים');
 }
-function missedList(b,id){ return b.days.filter(d=>d.d<todayISO&&b.tracks.some(t=>!d.items[t.key].rest&&!isDone(id,d.d,t.key))); }
+function missedList(b,id){ return b.days.filter(d=>d.d<todayISO&&b.tracks.some(t=>!d.items[t.key].rest&&!d.items[t.key].review&&!isDone(id,d.d,t.key))); }
 function ensureTabbar(){
   let tb=document.getElementById('tabbar');
   if(!tb){ tb=document.createElement('nav'); tb.id='tabbar'; tb.className='tabbar'; tb.setAttribute('aria-label','ניווט'); tb.dir='rtl'; document.body.appendChild(tb);
@@ -904,12 +918,14 @@ function renderBoard(full){
   const headLabel=isToday?'היום · ':(d.d>todayISO?(todayISO<b.days[0].d?'מתחילים ב':'הלימוד הבא · '):'היום האחרון · ');
   const links=(it,t)=>it.links&&it.links.length?'<div class="mlinks">'+it.links.map(l=>'<a class="openbtn" href="'+esc(l.url)+'" target="_blank" rel="noopener">'+(it.links.length>1?esc(l.label):'פתח באפליקציה')+' <span aria-hidden="true">↗</span></a>').join('')+'</div>':'';
   const lk=it=>(it.links||[]).map(l=>' <a class="lk" href="'+esc(l.url)+'" target="_blank" rel="noopener" title="'+esc(l.label)+' בספריא" aria-label="פתח '+esc(l.label)+' בספריא">↗</a>').join('');
-  const box=(date,t,big)=>'<input type="checkbox" class="chk" data-date="'+date+'" data-k="'+t.key+'" aria-label="'+esc(t.label)+' '+date+'"'+(isDone(id,date,t.key)?' checked':'')+(canWrite?'':' disabled')+'>';
+  const box=(date,t,big,it)=>{ const au=!isDone(id,date,t.key)&&autoDone(it,date);
+    return '<input type="checkbox" class="chk'+(au?' auto':'')+'" data-date="'+date+'" data-k="'+t.key+'" aria-label="'+esc(t.label)+' '+date+(au?' (חזרה, סומן אוטומטית)':'')+'"'+(au?' title="יום חזרה – סומן אוטומטית"':'')+(isDone(id,date,t.key)||au?' checked':'')+(canWrite?'':' disabled')+'>'; };
+  const prevN=(x,t)=>{ const n=prevNote(b,id,x,t); return n?'<button type="button" class="prevnote" data-goto="'+n.d+'">⚠ הקודם ב'+esc(n.book)+' עוד לא סומן: '+esc(n.text)+' · יום '+esc(n.dow)+' '+esc(n.h)+'</button>':''; };
   const todayHtml='<section class="today" id="sec-today" aria-live="polite"><div class="today-head"><h2>'+headLabel+'יום '+esc(d.dow)+', '+esc(d.h)+'</h2><span class="daynum">יום '+d.n+' מתוך '+b.days.length+' · שבוע '+d.w+'</span></div>'+
-    b.tracks.map(t=>{const it=d.items[t.key];return '<div class="track'+(it.rest?' rest':'')+'" style="'+tv(t.kind)+'"><div><div class="lbl">'+esc(t.label)+'</div><div class="what">'+esc(it.text)+'</div>'+(it.meta?'<div class="meta">'+esc(it.meta)+'</div>':'')+links(it,t)+'</div>'+(it.rest?'':box(d.d,t,true))+'</div>'}).join('')+
+    b.tracks.map(t=>{const it=d.items[t.key];return '<div class="track'+(it.rest?' rest':'')+'" style="'+tv(t.kind)+'"><div><div class="lbl">'+esc(t.label)+'</div><div class="what">'+esc(it.text)+'</div>'+(it.meta?'<div class="meta">'+esc(it.meta)+'</div>':'')+links(it,t)+prevN(d,t)+'</div>'+(it.rest?'':box(d.d,t,true,it))+'</div>'}).join('')+
     '<div class="status" id="status">'+esc(S.msg)+'</div></section>';
   let done={},tot=0,dn=0; b.tracks.forEach(t=>done[t.key]=[0,0]);
-  for(const x of b.days) for(const t of b.tracks){ if(x.items[t.key].rest) continue; done[t.key][1]++; tot++; if(isDone(id,x.d,t.key)){done[t.key][0]++;dn++;} }
+  for(const x of b.days) for(const t of b.tracks){ if(x.items[t.key].rest) continue; done[t.key][1]++; tot++; if(doneX(id,x,t.key)){done[t.key][0]++;dn++;} }
   const late=missedList(b,id).length;
   const stats='<section class="stats" aria-label="התקדמות">'+b.tracks.map(t=>'<div class="stat" style="'+tv(t.kind)+'"><b>'+done[t.key][0]+'</b><span>ימי '+esc(t.label)+' מתוך '+done[t.key][1]+'</span></div>').join('')+
     '<button type="button" class="stat" id="late-btn" aria-label="מעבר ליום שעבר ולא סומן"><b>'+late+'</b><span>ימים שעברו ולא סומנו</span></button>'+
@@ -917,9 +933,9 @@ function renderBoard(full){
   const lastW=b.days[b.days.length-1].w, firstW=b.days[0].w;
   const ds=b.days.filter(x=>x.w===S.week);
   const week='<section id="sec-week"><div class="weeknav"><button class="btn" id="prev" type="button"'+(S.week<=firstW?' disabled':'')+'>→ הקודם</button><h3>שבוע '+S.week+(ds.length?' · '+esc(ds[0].h)+' – '+esc(ds[ds.length-1].h):'')+'</h3><button class="btn" id="nextw" type="button"'+(S.week>=lastW?' disabled':'')+'>הבא ←</button></div>'+
-    '<ul class="days">'+(ds.length?ds.map(x=>{const missed=x.d<todayISO&&b.tracks.some(t=>!x.items[t.key].rest&&!isDone(id,x.d,t.key));
+    '<ul class="days">'+(ds.length?ds.map(x=>{const missed=x.d<todayISO&&b.tracks.some(t=>!x.items[t.key].rest&&!x.items[t.key].review&&!isDone(id,x.d,t.key));
       return '<li id="day-'+x.d+'" class="day'+(x.d===todayISO?' is-today':'')+(missed?' missed':'')+'"><div class="when"><b>'+esc(x.dow)+'</b>'+esc(x.h)+'</div><div class="lines">'+
-        b.tracks.map(t=>{const it=x.items[t.key];return '<div class="line'+(it.rest?' rest':'')+'" style="'+tv(t.kind)+'"><span><span class="k">'+esc(t.label)+'</span>'+esc(it.rest?'השלמה':it.text)+(it.rest?'':lk(it))+'</span>'+(it.rest?'':box(x.d,t))+'</div>'}).join('')+'</div></li>'}).join(''):'<li class="day"><div></div><div class="sub">אין ימי לימוד בשבוע הזה.</div></li>')+'</ul>'+
+        b.tracks.map(t=>{const it=x.items[t.key];return '<div class="line'+(it.rest?' rest':'')+'" style="'+tv(t.kind)+'"><span><span class="k">'+esc(t.label)+'</span>'+esc(it.rest?'השלמה':it.text)+(it.rest?'':lk(it))+prevN(x,t)+'</span>'+(it.rest?'':box(x.d,t,false,it))+'</div>'}).join('')+'</div></li>'}).join(''):'<li class="day"><div></div><div class="sub">אין ימי לימוד בשבוע הזה.</div></li>')+'</ul>'+
     '<div style="text-align:center;margin-top:10px"><button class="btn" id="go-today" type="button">חזרה לשבוע הנוכחי</button></div></section>';
   const notes=(item.legacy||item.cfg.fixed)&&b.notes&&b.notes.length?'<details><summary>הערות ללוח</summary><ul>'+b.notes.map(n=>'<li>'+esc(n.replace(/^•\s*/,''))+'</li>').join('')+'</ul></details>':'';
   const del=item.legacy?'':'<div class="confirm manage">'+(S.confirmDel?'<span>למחוק את התכנית ואת כל הסימונים שלה?</span><button type="button" class="btn danger" id="del-yes">כן, למחוק</button><button type="button" class="btn" id="del-no">ביטול</button>':(item.cfg.fixed?'':'<button type="button" class="btn" id="edit">עריכת התכנית</button>')+'<button type="button" class="btn ghost" id="del">מחיקת התכנית</button>')+'</div>';
@@ -954,12 +970,13 @@ function renderBoard(full){
     on('cb-here',()=>goDay(byD(S.catch)));
     on('cb-x',()=>{S.catch=null;renderBoard();});
   }
+  app.querySelectorAll('.prevnote').forEach(x=>x.onclick=()=>goDay(b.days.find(d=>d.d===x.dataset.goto)));
   const cu=document.getElementById('catchup'); if(cu){ cu.ontoggle=()=>{S.cuOpen=cu.open};
     cu.querySelectorAll('[data-cu-all]').forEach(x=>x.onclick=()=>{S.cuConfirm=x.dataset.cuAll;renderBoard()});
     cu.querySelectorAll('[data-cu-no]').forEach(x=>x.onclick=()=>{S.cuConfirm=null;renderBoard()});
     cu.querySelectorAll('[data-cu-more]').forEach(x=>x.onclick=()=>{S.cuAll=Object.assign({},S.cuAll,{[x.dataset.cuMore]:true});renderBoard()});
     cu.querySelectorAll('[data-cu-yes]').forEach(x=>x.onclick=()=>{const k=x.dataset.cuYes; S.cuConfirm=null;
-      markAll(id,k,b.days.filter(d=>d.d<todayISO&&!d.items[k].rest&&!isDone(id,d.d,k)).map(d=>d.d));}); }
+      markAll(id,k,b.days.filter(d=>d.d<todayISO&&!d.items[k].rest&&!d.items[k].review&&!isDone(id,d.d,k)).map(d=>d.d));}); }
   const rm=document.getElementById('remind'); if(rm) rm.ontoggle=()=>{S.remindOpen=rm.open};
   const rt=document.getElementById('rm-time'); if(rt) rt.onchange=()=>{ if(rt.value){ ls.set('lu-remind-time',rt.value); document.getElementById('rm-gcal').href=gcalUrl(item,b); } };
   const ri=document.getElementById('rm-ics'); if(ri) ri.onclick=()=>{
